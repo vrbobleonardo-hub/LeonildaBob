@@ -1,0 +1,13 @@
+.env
+.venv/
+data/*.sqlite
+data/*.sqlite-*
+tmp/smoke.sqlite
+tmp/pycache/
+tmp/
+output/
+static/uploads/whatsapp/*
+!static/uploads/whatsapp/.gitkeep
+__pycache__/
+.playwright-cli/
+.DS_Store

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="admin-login-page">
+  <div class="admin-login-card">
+    <img src="/static/assets/bobadv-logo.png" alt="Bob Advogados">
+    <p class="eyebrow">Acesso interno</p>
+    <h1>Entrar no painel</h1>
+    <p>Área reservada para acompanhar contatos, mensagens e atendimento pelo WhatsApp.</p>
+
+    {% if not auth_configured %}
+    <div class="login-warning">
+      Configure usuário, senha e chave de sessão no arquivo local antes de usar o painel.
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="login-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/admin/login" class="login-form">
+      <input type="hidden" name="next_path" value="{{ next_path }}">
+      <label>
+        Usuário
+        <input name="username" autocomplete="username" required>
+      </label>
+      <label>
+        Senha
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" {{ "disabled" if not auth_configured else "" }}>Entrar</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

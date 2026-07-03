@@ -1,0 +1,35 @@
+{% macro lead_form(kind, title, intro, cta) -%}
+<form class="lead-form" data-lead-form>
+  <input type="hidden" name="kind" value="{{ kind }}">
+  <input type="hidden" name="source_path" value="">
+  <div class="form-heading">
+    <p class="eyebrow">{{ title }}</p>
+    <p>{{ intro }}</p>
+  </div>
+  <div class="form-grid">
+    <label>
+      Nome
+      <input name="name" autocomplete="name" required minlength="2" placeholder="Seu nome completo">
+    </label>
+    <label>
+      WhatsApp
+      <input name="phone" autocomplete="tel" required placeholder="(11) 99999-9999">
+    </label>
+  </div>
+  <label>
+    E-mail <span class="optional">opcional</span>
+    <input name="email" autocomplete="email" type="email" placeholder="voce@email.com">
+  </label>
+  <label>
+    Resumo do assunto
+    <textarea name="message" rows="4" maxlength="1200" placeholder="Conte brevemente o que aconteceu ou qual é seu interesse."></textarea>
+  </label>
+  <label class="consent">
+    <input name="consent" type="checkbox" required>
+    <span>Autorizo o contato pelo WhatsApp e o armazenamento dos dados enviados para fins de atendimento.</span>
+  </label>
+  <button class="button button-primary" type="submit">{{ cta }}</button>
+  <p class="form-status" data-form-status aria-live="polite"></p>
+</form>
+{%- endmacro %}
+

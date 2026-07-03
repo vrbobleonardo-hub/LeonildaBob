@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% from "partials/forms.html" import lead_form %}
+
+{% block content %}
+<section class="hero">
+  <img class="hero-image" src="/static/assets/hero-law-office.png" alt="Ambiente editorial de escritório jurídico">
+  <div class="hero-shade"></div>
+  <img class="hero-portrait" src="/static/assets/leonilda-cutout.png" alt="Leonilda Bob">
+  <div class="hero-content">
+    <p class="eyebrow">Bob Advogados · OAB/SP 85.766</p>
+    <h1>Leonilda Bob</h1>
+    <p class="hero-copy">
+      Advocacia trabalhista com experiência, docência e atendimento direto para trabalhadores.
+    </p>
+    <div class="hero-actions">
+      <a class="button button-primary" href="/contato">Falar com o atendimento</a>
+      <a class="button button-ghost" href="/sobre">Conhecer a trajetória</a>
+    </div>
+  </div>
+  <div class="hero-meta">
+    <span>+40 anos de advocacia</span>
+    <span>Docência universitária na UBC</span>
+    <span>Atendimento presencial e online</span>
+  </div>
+</section>
+
+<section class="intro-strip">
+  <p>
+    <a href="/atuacao#trabalhista">Trabalhista</a> ·
+    <a href="/atuacao#consumidor">Consumidor</a> ·
+    <a href="/atuacao#imobiliario">Imobiliário</a> ·
+    <a href="/atuacao#tributario">Tributário</a> ·
+    <a href="/atuacao#publico">Público</a>
+  </p>
+  <p>Mogi das Cruzes/SP · WhatsApp {{ whatsapp_display }}</p>
+</section>
+
+<section class="section split">
+  <div>
+    <p class="eyebrow">Atuação principal</p>
+    <h2>Direito Trabalhista para trabalhadores.</h2>
+  </div>
+  <div class="rich-text">
+    <p>
+      O escritório recebe demandas envolvendo rescisão, verbas trabalhistas, vínculo de emprego,
+      horas extras, assédio, acidente de trabalho e demais questões da relação de trabalho.
+    </p>
+    <p>
+      O primeiro atendimento é objetivo: entender o caso, organizar documentos e indicar o melhor caminho para análise jurídica.
+    </p>
+    <a class="text-link" href="/atuacao">Ver áreas de atendimento</a>
+  </div>
+</section>
+
+<section class="section concise-grid">
+  <article>
+    <p class="eyebrow">Trajetória</p>
+    <h3>Mais de quatro décadas de advocacia.</h3>
+    <p>Experiência prática, docência universitária na UBC e formação acadêmica com período na Sorbonne, França.</p>
+    <a class="text-link" href="/sobre">Ler trajetória</a>
+  </article>
+  <article>
+    <p class="eyebrow">Instituto</p>
+    <h3>Apoio a bacharéis em Direito.</h3>
+    <p>Iniciativa em constituição para orientar jovens bacharéis na preparação para o Exame da OAB.</p>
+    <a class="text-link" href="/instituto">Conhecer o instituto</a>
+  </article>
+</section>
+
+<section class="section process-steps">
+  <div class="section-kicker">
+    <p class="eyebrow">Como funciona</p>
+    <h2>Do primeiro contato à análise do caso.</h2>
+  </div>
+  <article>
+    <span>01</span>
+    <h3>Primeiro contato pelo WhatsApp</h3>
+    <p>O atendimento recolhe as informações essenciais e identifica a natureza da demanda.</p>
+  </article>
+  <article>
+    <span>02</span>
+    <h3>Organização de documentos</h3>
+    <p>Você recebe orientação sobre quais documentos ajudam a compreender o caso.</p>
+  </article>
+  <article>
+    <span>03</span>
+    <h3>Atendimento jurídico</h3>
+    <p>Com os dados mínimos organizados, o caso pode seguir para análise jurídica adequada.</p>
+  </article>
+</section>
+
+<section class="section contact-panel">
+  <div>
+    <p class="eyebrow">Primeiro atendimento</p>
+    <h2>Conte brevemente seu caso.</h2>
+    <p>
+      Após o envio, o atendimento inicia contato pelo WhatsApp informado para organizar as informações essenciais.
+    </p>
+  </div>
+  {{ lead_form("trabalhista", "Contato trabalhista", "Use este formulário para iniciar o atendimento de uma questão trabalhista.", "Enviar contato") }}
+</section>
+{% endblock %}

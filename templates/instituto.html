@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% from "partials/forms.html" import lead_form %}
+
+{% block content %}
+<section class="page-hero institute-hero">
+  <p class="eyebrow">Em constituição</p>
+  <h1>Instituto Leonilda Bob.</h1>
+  <p>Iniciativa dedicada a apoiar bacharéis em Direito na preparação para o Exame da OAB.</p>
+</section>
+
+<section class="section split">
+  <div>
+    <p class="eyebrow">Propósito</p>
+    <h2>Orientação para quem concluiu Direito e ainda busca a aprovação na OAB.</h2>
+  </div>
+  <div class="rich-text">
+    <p>
+      O Instituto Leonilda Bob nasce como projeto de apoio educacional e mentoria para jovens bacharéis em Direito.
+      A proposta é oferecer orientação, disciplina de estudos e desenvolvimento acadêmico-profissional.
+    </p>
+    <p>
+      Como o registro institucional ainda está em andamento, esta página recebe manifestações de interesse e organiza
+      uma lista inicial de contato.
+    </p>
+  </div>
+</section>
+
+<section class="section institute-pillars">
+  <article>
+    <h3>Mentoria</h3>
+    <p>Direcionamento para rotina de estudos, organização de conteúdo e postura diante da prova.</p>
+  </article>
+  <article>
+    <h3>Comunidade</h3>
+    <p>Acolhimento a bacharéis que precisam de método, continuidade e troca orientada.</p>
+  </article>
+  <article>
+    <h3>Desenvolvimento</h3>
+    <p>Fortalecimento acadêmico e profissional para os primeiros passos na carreira jurídica.</p>
+  </article>
+</section>
+
+<section class="section institute-program">
+  <div class="section-kicker">
+    <p class="eyebrow">Frente inicial</p>
+    <h2>Uma base para sair da tentativa isolada.</h2>
+  </div>
+  <div class="program-grid">
+    <article>
+      <h3>Para quem</h3>
+      <p>Bacharéis em Direito que já concluíram a graduação e precisam de orientação para retomar ou organizar a preparação para a OAB.</p>
+    </article>
+    <article>
+      <h3>Formato previsto</h3>
+      <p>Mentoria, encontros de orientação, organização de rotina e acompanhamento inicial de evolução.</p>
+    </article>
+    <article>
+      <h3>Cadastro de interesse</h3>
+      <p>Como o Instituto está em constituição, o formulário organiza uma lista inicial de interessados para contato futuro.</p>
+    </article>
+  </div>
+</section>
+
+<section class="section faq-section">
+  <div class="section-kicker">
+    <p class="eyebrow">Perguntas</p>
+    <h2>Sobre o Instituto.</h2>
+  </div>
+  <details>
+    <summary>O Instituto já está em funcionamento?</summary>
+    <p>A iniciativa está em constituição. A página recebe manifestações de interesse para organizar os próximos contatos.</p>
+  </details>
+  <details>
+    <summary>É um curso preparatório?</summary>
+    <p>A proposta inicial é de orientação e mentoria para bacharéis. O formato final pode ser detalhado após a estruturação institucional.</p>
+  </details>
+  <details>
+    <summary>Quem pode se cadastrar?</summary>
+    <p>Jovens bacharéis em Direito que desejam apoio para se preparar melhor para o Exame da OAB.</p>
+  </details>
+</section>
+
+<section class="section contact-panel">
+  <div>
+    <p class="eyebrow">Lista de interesse</p>
+    <h2>Cadastre-se para receber informações sobre a mentoria.</h2>
+    <p>O contato inicial será feito pelo WhatsApp informado.</p>
+  </div>
+  {{ lead_form("instituto", "Interesse no Instituto", "Use este formulário para registrar interesse na iniciativa.", "Registrar interesse") }}
+</section>
+{% endblock %}

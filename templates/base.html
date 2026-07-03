@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <meta name="description" content="{{ description }}">
+    <meta name="theme-color" content="#11140f">
+    <link rel="icon" href="/static/assets/bobadv-logo.png">
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body class="page-{{ page }}">
+    <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+    <header class="site-header" data-header>
+      <a class="brand" href="/" aria-label="Leonilda Bob | Bob Advogados">
+        <img src="/static/assets/bobadv-logo-full.png" alt="Bob Advogados">
+      </a>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav" data-menu-toggle>
+        Menu
+      </button>
+      <nav id="site-nav" class="site-nav" data-site-nav>
+        <a href="/sobre" class="{{ 'active' if page == 'sobre' else '' }}">Trajetória</a>
+        <a href="/atuacao" class="{{ 'active' if page == 'atuacao' else '' }}">Atuação</a>
+        <a href="/instituto" class="{{ 'active' if page == 'instituto' else '' }}">Instituto</a>
+        <a href="/contato" class="{{ 'active' if page == 'contato' else '' }}">Contato</a>
+      </nav>
+    </header>
+
+    <main id="conteudo">
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+      <div>
+        <img src="/static/assets/bobadv-logo-full.png" alt="Bob Advogados" class="footer-logo">
+        <p>Assessoria jurídica ética, estratégica e personalizada.</p>
+      </div>
+      <div>
+        <p class="footer-title">Atendimento</p>
+        <p>{{ whatsapp_display }}</p>
+        <p>Presencial e online</p>
+      </div>
+      <div>
+        <p class="footer-title">Endereço</p>
+        <p>{{ address }}<br>CEP 08790-610</p>
+      </div>
+      <div>
+        <p class="footer-title">Áreas</p>
+        <p>
+          <a href="/atuacao#trabalhista">Trabalhista</a>,
+          <a href="/atuacao#consumidor">Consumidor</a>,
+          <a href="/atuacao#imobiliario">Imobiliário</a>,
+          <a href="/atuacao#tributario">Tributário</a> e
+          <a href="/atuacao#publico">Público</a>.
+        </p>
+      </div>
+    </footer>
+
+    <script src="/static/js/site.js" defer></script>
+  </body>
+</html>

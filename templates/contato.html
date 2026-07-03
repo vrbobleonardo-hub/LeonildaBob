@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "partials/forms.html" import lead_form %}
+
+{% block content %}
+<section class="page-hero">
+  <p class="eyebrow">Contato</p>
+  <h1>Atendimento presencial e online.</h1>
+  <p>{{ address }} · WhatsApp {{ whatsapp_display }}</p>
+</section>
+
+<section class="section contact-layout">
+  <div class="contact-card">
+    <p class="eyebrow">Bob Advogados</p>
+    <h2>Fale com o escritório.</h2>
+    <p>
+      Envie seus dados pelo formulário. O primeiro retorno será feito via WhatsApp para organizar o atendimento inicial.
+    </p>
+    <dl>
+      <div>
+        <dt>WhatsApp</dt>
+        <dd>{{ whatsapp_display }}</dd>
+      </div>
+      <div>
+        <dt>Endereço</dt>
+        <dd>{{ address }}<br>CEP 08790-610</dd>
+      </div>
+      <div>
+        <dt>Formato</dt>
+        <dd>Atendimento presencial e online.</dd>
+      </div>
+    </dl>
+  </div>
+  {{ lead_form("geral", "Contato geral", "Para questões trabalhistas, instituto ou outros assuntos jurídicos.", "Enviar contato") }}
+</section>
+
+<section class="section contact-guidance">
+  <div>
+    <p class="eyebrow">Antes de enviar</p>
+    <h2>Uma mensagem objetiva acelera o atendimento.</h2>
+  </div>
+  <div class="guidance-list">
+    <p><span>01</span> Informe se o assunto é trabalhista, instituto ou outra área jurídica.</p>
+    <p><span>02</span> Resuma o fato principal em poucas linhas, com datas aproximadas quando houver.</p>
+    <p><span>03</span> Use um WhatsApp ativo, porque o primeiro retorno será feito por lá.</p>
+  </div>
+</section>
+
+<section class="section map-section">
+  <div class="section-kicker">
+    <p class="eyebrow">Localização</p>
+    <h2>Atendimento em Mogi das Cruzes.</h2>
+    <p>{{ address }} · {{ address_zip }}</p>
+  </div>
+  <div class="map-frame">
+    <iframe
+      title="Mapa do endereço Bob Advogados"
+      loading="lazy"
+      referrerpolicy="no-referrer-when-downgrade"
+      src="https://www.google.com/maps?q={{ maps_query | urlencode }}&output=embed">
+    </iframe>
+  </div>
+  <a class="button button-secondary" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query={{ maps_query | urlencode }}">Abrir no Google Maps</a>
+</section>
+{% endblock %}
