@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import mimetypes
 import re
 from pathlib import Path
 from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, EmailStr, Field
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .auth import authenticate, auth_is_configured, build_login_response, build_logout_response, current_admin, require_admin
-from . import db
+from . import db, storage
 from .settings import settings
 from .whatsapp import (
     auto_reply_for_inbound,
@@ -25,12 +29,18 @@ from .whatsapp import (
 )
 
 
-app = FastAPI(title=settings.app_name)
-templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app = FastAPI(
+    title=settings.app_name,
+    docs_url="/docs" if settings.docs_enabled else None,
+    redoc_url="/redoc" if settings.docs_enabled else None,
+    openapi_url="/openapi.json" if settings.docs_enabled else None,
+)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
+templates = Jinja2Templates(directory=settings.template_dir)
+app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 
-UPLOAD_DIR = Path("static/uploads/whatsapp")
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+UPLOAD_DIR = settings.private_upload_dir
+MAX_UPLOAD_BYTES = settings.max_upload_bytes
 ALLOWED_UPLOAD_MIMES = {
     "image/jpeg",
     "image/png",
@@ -50,6 +60,26 @@ ALLOWED_UPLOAD_MIMES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "text/plain",
 }
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and (
+        request.url.path.startswith("/api/admin") or request.url.path == "/admin/logout"
+    ):
+        origin = request.headers.get("origin")
+        if origin and origin.rstrip("/") != settings.app_base_url:
+            return JSONResponse({"detail": "Origem não autorizada."}, status_code=403)
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if settings.app_base_url.startswith("https://"):
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    if request.url.path.startswith("/admin") or request.url.path.startswith("/api/admin"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 class LeadPayload(BaseModel):
@@ -91,6 +121,15 @@ class TrackPayload(BaseModel):
 @app.on_event("startup")
 def startup() -> None:
     db.init_db()
+    try:
+        app.state.storage_ready = storage.ensure_bucket()
+    except RuntimeError:
+        app.state.storage_ready = False
+
+
+@app.get("/healthz", include_in_schema=False)
+def healthz() -> JSONResponse:
+    return JSONResponse({"status": "ok"})
 
 
 def client_ip(request: Request) -> str | None:
@@ -166,10 +205,13 @@ def media_payload_from_message(message: dict[str, Any]) -> dict[str, Any]:
             mime_type = fetched_mime or mime_type
             extension = mimetypes.guess_extension(mime_type) or Path(filename).suffix or ".bin"
             local_name = safe_filename(f"{media_id}{extension}")
-            UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-            local_path = UPLOAD_DIR / local_name
-            local_path.write_bytes(content)
-            media_url = f"/static/uploads/whatsapp/{local_name}"
+            if storage.configured():
+                _object_path, media_url = storage.upload_bytes(content, local_name, mime_type)
+            else:
+                UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+                local_path = UPLOAD_DIR / local_name
+                local_path.write_bytes(content)
+                media_url = storage.admin_media_url(f"local/{local_name}", filename)
             media_size = fetched_size or len(content)
         except Exception as exc:
             return {
@@ -207,8 +249,8 @@ def sobre(request: Request) -> HTMLResponse:
         template_context(
             request,
             "sobre",
-            "Trajetória | Leonilda Bob",
-            "Conheça a trajetória acadêmica e profissional de Leonilda Bob, OAB/SP 85.766.",
+            "Sócios | Bob Advogados",
+            "Conheça Leonilda Bob, OAB/SP 85.766, e Victor Ladislau Bob, OAB/SP 282.631.",
         ),
     )
 
@@ -303,7 +345,7 @@ def admin_login_submit(
 @app.post("/admin/logout")
 def admin_logout(request: Request):
     require_admin(request)
-    return build_logout_response()
+    return build_logout_response(request.cookies.get("bob_admin_session"))
 
 
 @app.post("/api/leads")
@@ -319,15 +361,8 @@ def create_lead(payload: LeadPayload, request: Request) -> JSONResponse:
             "user_agent": request.headers.get("user-agent", "")[:500],
         }
     )
-    lead_id = db.insert_lead(lead_data)
     message = first_contact_message(payload.kind, payload.name, payload.message)
-    outbox_id = db.enqueue_whatsapp(lead_id, phone, message)
-    conversation_id = db.get_or_create_conversation(
-        phone,
-        name=payload.name,
-        kind=payload.kind,
-        source_lead_id=lead_id,
-    )
+    lead_id, outbox_id, conversation_id = db.create_lead_bundle(lead_data, message)
     dispatch_status = "queued"
     try:
         send_result = send_whatsapp_text(phone, message, conversation_id=conversation_id, first_contact=True)
@@ -406,6 +441,29 @@ def admin_conversation_messages(conversation_id: int, request: Request) -> JSONR
     return JSONResponse({"ok": True, "conversation": conversation, "messages": db.list_messages(conversation_id)})
 
 
+@app.get("/api/admin/media")
+def admin_media(path: str, request: Request, name: str = "arquivo") -> Response:
+    require_admin(request)
+    filename = safe_filename(name)
+    try:
+        if path.startswith("local/"):
+            local_name = safe_filename(path.removeprefix("local/"))
+            local_path = UPLOAD_DIR / local_name
+            if not local_path.is_file():
+                raise FileNotFoundError(local_name)
+            content = local_path.read_bytes()
+            mime_type = mimetypes.guess_type(filename or local_name)[0] or "application/octet-stream"
+        else:
+            content, mime_type = storage.download(path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado.")
+    return Response(
+        content,
+        media_type=mime_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"', "Cache-Control": "private, max-age=300"},
+    )
+
+
 @app.post("/api/admin/conversations/{conversation_id}/messages")
 def admin_send_message(
     conversation_id: int,
@@ -423,7 +481,10 @@ def admin_send_message(
     try:
         if attachment and attachment.filename:
             path, filename, mime_type, _size = save_upload_file(attachment)
-            public_url = f"/static/uploads/whatsapp/{path.name}"
+            if storage.configured():
+                _object_path, public_url = storage.upload_file(path, filename, mime_type)
+            else:
+                public_url = storage.admin_media_url(f"local/{path.name}", filename)
             result = send_whatsapp_media(
                 conversation["phone"],
                 path,
@@ -433,6 +494,8 @@ def admin_send_message(
                 conversation_id=conversation_id,
                 public_url=public_url,
             )
+            if storage.configured():
+                path.unlink(missing_ok=True)
         else:
             result = send_whatsapp_text(conversation["phone"], clean_text, conversation_id=conversation_id)
         return JSONResponse({"ok": True, "status": result.get("status", "sent")})
@@ -517,7 +580,18 @@ def extract_message_text(message: dict[str, Any]) -> str:
 
 @app.post("/api/webhooks/whatsapp")
 async def receive_whatsapp_webhook(request: Request) -> JSONResponse:
-    payload = await request.json()
+    raw_body = await request.body()
+    if settings.whatsapp_app_secret:
+        received_signature = request.headers.get("x-hub-signature-256", "")
+        expected_signature = "sha256=" + hmac.new(
+            settings.whatsapp_app_secret.encode("utf-8"), raw_body, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(received_signature, expected_signature):
+            raise HTTPException(status_code=403, detail="Assinatura inválida.")
+    try:
+        payload = json.loads(raw_body or b"{}")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Conteúdo inválido.")
     entries = payload.get("entry") if isinstance(payload, dict) else []
     handled = 0
     for entry in entries or []:

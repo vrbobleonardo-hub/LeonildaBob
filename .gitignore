@@ -2,6 +2,7 @@
 .venv/
 data/*.sqlite
 data/*.sqlite-*
+data/uploads/
 tmp/smoke.sqlite
 tmp/pycache/
 tmp/

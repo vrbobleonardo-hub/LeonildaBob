@@ -1,6 +1,6 @@
 # Leonilda Bob | Bob Advogados
 
-Site institucional independente para Leonilda Bob / Bob Advogados.
+Site institucional independente para Leonilda Bob, Ladislau Bob e Bob Advogados.
 
 ## Escopo desta primeira versão
 
@@ -8,7 +8,8 @@ Site institucional independente para Leonilda Bob / Bob Advogados.
 - Foco principal em Direito Trabalhista para trabalhadores.
 - Página do Instituto Leonilda Bob como iniciativa em constituição.
 - Formulários curtos separados por intenção: trabalhista, instituto e contato geral.
-- Banco SQLite próprio para contatos recebidos, visitas, origem dos acessos, conversas e fila de WhatsApp.
+- PostgreSQL no Supabase para contatos, visitas, conversas, sessões e fila de WhatsApp.
+- Supabase Storage privado para fotos, áudios, vídeos e documentos do atendimento.
 - Primeiro contato por WhatsApp preparado para API oficial ou QR bridge, com atendimento inicial assinado por Lucas.
 - Hero editorial com recorte PNG da Leonilda em primeiro plano.
 - Mapa do endereço no Google Maps.
@@ -28,6 +29,17 @@ Acesse:
 
 - Site: `http://127.0.0.1:8000`
 - Admin local: `http://127.0.0.1:8000/admin`
+
+Sem `DATABASE_URL`, o projeto usa SQLite apenas para desenvolvimento. Com as variáveis do Supabase,
+o mesmo código usa PostgreSQL e armazenamento privado.
+
+## Publicar no Render
+
+O arquivo `render.yaml` deixa o serviço pronto para criação no Render. As credenciais marcadas como
+`sync: false` devem ser preenchidas no painel e nunca adicionadas ao GitHub.
+
+O plano gratuito serve para validar o deploy. Antes de ativar o WhatsApp em produção, use uma instância
+sempre ativa para evitar que o serviço adormeça e atrase o recebimento de mensagens.
 
 ## WhatsApp
 

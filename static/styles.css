@@ -667,6 +667,125 @@ textarea:focus {
   text-transform: uppercase;
 }
 
+.partners-feature {
+  max-width: 980px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+
+.institute-note {
+  max-width: 900px;
+  text-align: center;
+}
+
+.institute-note > p:not(.eyebrow) {
+  max-width: 680px;
+  margin-right: auto;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: clamp(18px, 2vw, 23px);
+}
+
+.partners-feature h2,
+.partners-heading h2,
+.partner-dossier h2 {
+  margin-bottom: 24px;
+}
+
+.partners-feature > p:not(.eyebrow),
+.partners-heading > p:not(.eyebrow) {
+  max-width: 760px;
+  margin-right: auto;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: clamp(18px, 2vw, 23px);
+}
+
+.partner-signatures {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 28px;
+  margin: 34px 0 22px;
+  color: var(--bronze-dark);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.partners-heading {
+  max-width: 920px;
+  text-align: center;
+}
+
+.partner-dossier {
+  max-width: 940px;
+  border-top: 1px solid var(--line);
+}
+
+.partner-dossier header,
+.partner-biography,
+.partner-facts {
+  max-width: 780px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.partner-number {
+  margin: 0 0 42px;
+  color: var(--bronze);
+  font-family: var(--serif);
+  font-size: clamp(46px, 7vw, 92px);
+  line-height: 0.8;
+}
+
+.partner-dossier h2 {
+  font-size: clamp(48px, 7vw, 96px);
+  line-height: 0.9;
+}
+
+.partner-oab {
+  color: var(--bronze-dark);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.partner-biography {
+  margin-top: 46px;
+}
+
+.partner-facts {
+  display: grid;
+  gap: 0;
+  margin-top: 48px;
+  border-top: 1px solid var(--line);
+}
+
+.partner-facts p {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.34fr) 1fr;
+  gap: 24px;
+  margin: 0;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--serif);
+  font-size: clamp(22px, 3vw, 34px);
+  line-height: 1.05;
+}
+
+.partner-facts span {
+  color: var(--bronze-dark);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
 .timeline article,
 .practice-list article,
 .institute-pillars article {
@@ -2024,6 +2143,16 @@ th {
   .lead-form,
   .contact-card {
     padding: 24px;
+  }
+
+  .partner-signatures {
+    align-items: center;
+    flex-direction: column;
+  }
+
+  .partner-facts p {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 
   .contact-layout {

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
 
+from . import db
 from .settings import settings
 
 
@@ -67,11 +68,18 @@ def _sign(payload: str) -> str:
     return hmac.new(settings.admin_session_secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def create_session_token(username: str) -> str:
     expires_at = int(time.time()) + max(settings.admin_session_ttl_seconds, 900)
-    payload = f"{username}:{expires_at}"
+    nonce = secrets.token_urlsafe(32)
+    payload = f"{username}:{expires_at}:{nonce}"
     signature = _sign(payload)
-    return base64.urlsafe_b64encode(f"{payload}:{signature}".encode("utf-8")).decode("ascii")
+    token = base64.urlsafe_b64encode(f"{payload}:{signature}".encode("utf-8")).decode("ascii")
+    db.create_admin_session(_token_hash(token), username, expires_at)
+    return token
 
 
 def verify_session_token(token: str | None) -> AdminUser | None:
@@ -79,13 +87,15 @@ def verify_session_token(token: str | None) -> AdminUser | None:
         return None
     try:
         decoded = base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8")
-        username, expires_raw, signature = decoded.rsplit(":", 2)
-        payload = f"{username}:{expires_raw}"
+        username, expires_raw, nonce, signature = decoded.rsplit(":", 3)
+        payload = f"{username}:{expires_raw}:{nonce}"
         if not hmac.compare_digest(signature, _sign(payload)):
             return None
         if int(expires_raw) < int(time.time()):
             return None
         if not hmac.compare_digest(username, settings.admin_username):
+            return None
+        if not db.admin_session_is_active(_token_hash(token), username, int(time.time())):
             return None
         return AdminUser(username=username)
     except Exception:
@@ -123,7 +133,9 @@ def build_login_response(username: str, next_path: str = "/admin") -> RedirectRe
     return response
 
 
-def build_logout_response() -> RedirectResponse:
+def build_logout_response(token: str | None = None) -> RedirectResponse:
+    if token:
+        db.revoke_admin_session(_token_hash(token))
     response = RedirectResponse("/admin/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response

@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: leonilda-bob
+    runtime: python
+    plan: free
+    region: virginia
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: APP_ENV
+        value: production
+      - key: APP_BASE_URL
+        value: https://leonilda-bob.onrender.com
+      - key: ALLOWED_HOSTS
+        value: leonilda-bob.onrender.com
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: DOCS_ENABLED
+        value: "0"
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        value: https://qagpnekyitrlsgsirrpm.supabase.co
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: whatsapp-media
+      - key: ADMIN_USERNAME
+        value: bob
+      - key: ADMIN_PASSWORD_HASH
+        sync: false
+      - key: ADMIN_SESSION_SECRET
+        generateValue: true
+      - key: METRICS_SALT
+        generateValue: true
+      - key: WHATSAPP_PROVIDER
+        value: official
+      - key: WHATSAPP_DRY_RUN
+        value: "1"
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_FIRST_CONTACT_TEMPLATE
+        sync: false
