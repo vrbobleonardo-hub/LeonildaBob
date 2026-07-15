@@ -1,0 +1,13 @@
+{% macro whatsapp_icon(loading='lazy') -%}
+<img class="whatsapp-mark" src="/static/assets/whatsapp-logo.svg" width="48" height="48" alt="" aria-hidden="true" loading="{{ loading }}" decoding="async">
+{%- endmacro %}
+
+{% macro whatsapp_link(label='WhatsApp', class_name='whatsapp-inline') -%}
+<a class="{{ class_name }}" href="https://wa.me/{{ whatsapp_digits }}" target="_blank" rel="noopener" aria-label="{{ label }} {{ whatsapp_display }}">
+  {{ whatsapp_icon() }}
+  <span>
+    <small>{{ label }}</small>
+    <strong>{{ whatsapp_display }}</strong>
+  </span>
+</a>
+{%- endmacro %}

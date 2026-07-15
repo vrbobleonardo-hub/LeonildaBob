@@ -1,0 +1,5 @@
+{
+  "scripts": {
+    "dev": "DATABASE_URL= SUPABASE_URL= SUPABASE_SECRET_KEY= APP_BASE_URL=http://127.0.0.1:4000 .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 4000"
+  }
+}

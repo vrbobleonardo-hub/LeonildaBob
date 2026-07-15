@@ -1,35 +1,54 @@
 {% macro lead_form(kind, title, intro, cta) -%}
-<form class="lead-form" data-lead-form>
+{% set form_id = 'lead-' ~ kind %}
+<form class="lead-form" data-lead-form method="post" action="/contato/enviar" aria-describedby="{{ form_id }}-intro">
   <input type="hidden" name="kind" value="{{ kind }}">
   <input type="hidden" name="source_path" value="">
+  <input type="hidden" name="form_started_at" value="{{ form_started_at }}" data-form-started>
+  <input type="hidden" name="request_key" value="{{ form_request_key }}" data-request-key>
+  <div class="honeypot" aria-hidden="true">
+    <label for="{{ form_id }}-website">Não preencha este campo</label>
+    <input id="{{ form_id }}-website" name="website" tabindex="-1" autocomplete="off">
+  </div>
   <div class="form-heading">
     <p class="eyebrow">{{ title }}</p>
-    <p>{{ intro }}</p>
+    <p id="{{ form_id }}-intro">{{ intro }} Campos obrigatórios estão identificados.</p>
   </div>
-  <div class="form-grid">
-    <label>
-      Nome
-      <input name="name" autocomplete="name" required minlength="2" placeholder="Seu nome completo">
-    </label>
-    <label>
-      WhatsApp
-      <input name="phone" autocomplete="tel" required placeholder="(11) 99999-9999">
-    </label>
+  <fieldset>
+    <legend>Seus dados</legend>
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="{{ form_id }}-name">Nome <span aria-hidden="true">*</span></label>
+        <input id="{{ form_id }}-name" name="name" type="text" autocomplete="name" required minlength="2" maxlength="120" placeholder="Seu nome completo">
+      </div>
+      <div class="form-field">
+        <label for="{{ form_id }}-phone">WhatsApp <span aria-hidden="true">*</span></label>
+        <input id="{{ form_id }}-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required minlength="10" maxlength="20" placeholder="(11) 99999-9999">
+      </div>
+    </div>
+    <label for="{{ form_id }}-email">E-mail <span class="optional">opcional</span></label>
+    <input id="{{ form_id }}-email" name="email" autocomplete="email" type="email" maxlength="254" placeholder="voce@email.com">
+  </fieldset>
+  <fieldset>
+    <legend>Assunto</legend>
+    {% if kind == 'geral' %}
+    <label for="{{ form_id }}-area">Área jurídica <span aria-hidden="true">*</span></label>
+    <select id="{{ form_id }}-area" name="area" required>
+      <option value="">Selecione</option>
+      {% for value, label in [('trabalhista','Trabalhista'),('previdenciario','BPC/LOAS'),('consumidor','Consumidor'),('imobiliario','Imobiliário'),('tributario','Tributário'),('publico','Direito Público'),('outro','Outro assunto')] %}
+      <option value="{{ value }}" {{ 'selected' if selected_area == value else '' }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    {% else %}
+    <input type="hidden" name="area" value="{{ 'instituto' if kind == 'instituto' else 'previdenciario' if kind == 'bpc' else 'trabalhista' }}">
+    {% endif %}
+    <label for="{{ form_id }}-message">Resumo do assunto <span aria-hidden="true">*</span></label>
+    <textarea id="{{ form_id }}-message" name="message" rows="4" required minlength="10" maxlength="1200" placeholder="Conte brevemente o que aconteceu ou qual é seu interesse."></textarea>
+  </fieldset>
+  <div class="consent">
+    <input id="{{ form_id }}-consent" name="consent" type="checkbox" required>
+    <label for="{{ form_id }}-consent">Autorizo o contato pelo WhatsApp e o tratamento dos dados enviados para fins de atendimento, conforme a <a href="/politica-de-privacidade" target="_blank" rel="noopener">política de privacidade <span class="sr-only">(abre em nova aba)</span></a>.</label>
   </div>
-  <label>
-    E-mail <span class="optional">opcional</span>
-    <input name="email" autocomplete="email" type="email" placeholder="voce@email.com">
-  </label>
-  <label>
-    Resumo do assunto
-    <textarea name="message" rows="4" maxlength="1200" placeholder="Conte brevemente o que aconteceu ou qual é seu interesse."></textarea>
-  </label>
-  <label class="consent">
-    <input name="consent" type="checkbox" required>
-    <span>Autorizo o contato pelo WhatsApp e o armazenamento dos dados enviados para fins de atendimento.</span>
-  </label>
   <button class="button button-primary" type="submit">{{ cta }}</button>
-  <p class="form-status" data-form-status aria-live="polite"></p>
+  <p class="form-status" data-form-status role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></p>
 </form>
 {%- endmacro %}
-

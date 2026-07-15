@@ -4,7 +4,8 @@ import hashlib
 import json
 import re
 import sqlite3
-import time
+import threading
+import unicodedata
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -13,11 +14,15 @@ from typing import Any, Iterator
 from .settings import settings
 
 
+_POSTGRES_POOL: Any = None
+_POOL_LOCK = threading.Lock()
+
+
 POSTGRES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS leads (
     id BIGSERIAL PRIMARY KEY,
     created_at TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('trabalhista', 'instituto', 'geral')),
+    kind TEXT NOT NULL CHECK (kind IN ('trabalhista', 'instituto', 'bpc', 'geral')),
     area TEXT,
     name TEXT NOT NULL,
     phone TEXT NOT NULL,
@@ -60,7 +65,8 @@ CREATE TABLE IF NOT EXISTS whatsapp_outbox (
     status TEXT NOT NULL DEFAULT 'pending',
     attempts INTEGER NOT NULL DEFAULT 0,
     provider_message_id TEXT,
-    last_error TEXT
+    last_error TEXT,
+    next_attempt_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS whatsapp_conversations (
@@ -94,6 +100,18 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
     media_provider_id TEXT,
     status TEXT,
     raw_payload TEXT
+);
+
+CREATE TABLE IF NOT EXISTS whatsapp_webhook_events (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    processed_at TEXT,
+    payload_hash TEXT NOT NULL UNIQUE,
+    payload TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT,
+    last_error TEXT
 );
 
 CREATE TABLE IF NOT EXISTS page_views (
@@ -133,6 +151,20 @@ CREATE TABLE IF NOT EXISTS admin_auth_events (
     user_agent TEXT
 );
 
+CREATE TABLE IF NOT EXISTS blog_posts (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    published_at TEXT,
+    title TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    excerpt TEXT NOT NULL,
+    body TEXT NOT NULL,
+    category TEXT NOT NULL,
+    author_name TEXT NOT NULL DEFAULT 'Leonilda Bob',
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published'))
+);
+
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version TEXT PRIMARY KEY,
     applied_at TEXT NOT NULL
@@ -151,7 +183,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_case_key ON whatsapp_convers
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_conversation ON whatsapp_messages(conversation_id, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_provider_id ON whatsapp_messages(provider_message_id)
 WHERE provider_message_id IS NOT NULL AND provider_message_id != '';
+CREATE INDEX IF NOT EXISTS idx_webhook_events_pending ON whatsapp_webhook_events(status, next_attempt_at);
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_expiry ON admin_sessions(expires_at, revoked_at);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_public ON blog_posts(status, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_category ON blog_posts(category);
 """
 
 
@@ -214,6 +249,15 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def healthcheck() -> bool:
+    try:
+        with connect() as conn:
+            row = conn.execute("SELECT 1 AS ok").fetchone()
+            return bool(row and row["ok"] == 1)
+    except Exception:
+        return False
+
+
 def hash_ip(ip: str | None) -> str:
     raw = f"{settings.metrics_salt}:{ip or 'unknown'}".encode("utf-8")
     return hashlib.sha256(raw).hexdigest()[:32]
@@ -222,29 +266,20 @@ def hash_ip(ip: str | None) -> str:
 @contextmanager
 def connect() -> Iterator[ConnectionAdapter]:
     if settings.database_url:
-        import psycopg
-        from psycopg.rows import dict_row
-
-        raw = None
-        for attempt in range(3):
+        pool = postgres_pool()
+        with pool.connection(timeout=15) as raw:
+            conn = ConnectionAdapter(raw, postgres=True)
             try:
-                raw = psycopg.connect(
-                    settings.database_url,
-                    row_factory=dict_row,
-                    connect_timeout=8,
-                    prepare_threshold=None,
-                )
-                break
-            except psycopg.OperationalError:
-                if attempt == 2:
-                    raise
-                time.sleep(0.6 * (attempt + 1))
-        if raw is None:  # pragma: no cover - defensive guard
-            raise RuntimeError("Não foi possível conectar ao banco de dados.")
-        conn = ConnectionAdapter(raw, postgres=True)
+                yield conn
+                raw.commit()
+            except Exception:
+                raw.rollback()
+                raise
+        return
     else:
-        settings.db_path.parent.mkdir(parents=True, exist_ok=True)
+        settings.db_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         raw = sqlite3.connect(settings.db_path, timeout=15)
+        settings.db_path.chmod(0o600)
         raw.row_factory = sqlite3.Row
         raw.execute("PRAGMA foreign_keys = ON")
         raw.execute("PRAGMA busy_timeout = 15000")
@@ -254,8 +289,47 @@ def connect() -> Iterator[ConnectionAdapter]:
     try:
         yield conn
         raw.commit()
+    except Exception:
+        raw.rollback()
+        raise
     finally:
         raw.close()
+
+
+def postgres_pool() -> Any:
+    global _POSTGRES_POOL
+    if _POSTGRES_POOL is not None:
+        return _POSTGRES_POOL
+    with _POOL_LOCK:
+        if _POSTGRES_POOL is None:
+            from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
+
+            _POSTGRES_POOL = ConnectionPool(
+                conninfo=settings.database_url,
+                min_size=settings.db_pool_min_size,
+                max_size=settings.db_pool_max_size,
+                timeout=15,
+                max_idle=300,
+                max_lifetime=1_800,
+                reconnect_timeout=30,
+                kwargs={
+                    "row_factory": dict_row,
+                    "connect_timeout": 8,
+                    "prepare_threshold": None,
+                },
+                open=True,
+            )
+    return _POSTGRES_POOL
+
+
+def close_pool() -> None:
+    global _POSTGRES_POOL
+    with _POOL_LOCK:
+        pool = _POSTGRES_POOL
+        _POSTGRES_POOL = None
+    if pool is not None:
+        pool.close()
 
 
 def init_db() -> None:
@@ -310,6 +384,7 @@ def init_db() -> None:
                 attempts INTEGER NOT NULL DEFAULT 0,
                 provider_message_id TEXT,
                 last_error TEXT,
+                next_attempt_at TEXT,
                 FOREIGN KEY (lead_id) REFERENCES leads(id)
             );
 
@@ -346,6 +421,18 @@ def init_db() -> None:
                 status TEXT,
                 raw_payload TEXT,
                 FOREIGN KEY (conversation_id) REFERENCES whatsapp_conversations(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS whatsapp_webhook_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                processed_at TEXT,
+                payload_hash TEXT NOT NULL UNIQUE,
+                payload TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                next_attempt_at TEXT,
+                last_error TEXT
             );
 
             CREATE TABLE IF NOT EXISTS page_views (
@@ -385,6 +472,20 @@ def init_db() -> None:
                 user_agent TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS blog_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                published_at TEXT,
+                title TEXT NOT NULL,
+                slug TEXT NOT NULL UNIQUE,
+                excerpt TEXT NOT NULL,
+                body TEXT NOT NULL,
+                category TEXT NOT NULL,
+                author_name TEXT NOT NULL DEFAULT 'Leonilda Bob',
+                status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published'))
+            );
+
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 version TEXT PRIMARY KEY,
                 applied_at TEXT NOT NULL
@@ -396,9 +497,12 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(path);
             CREATE INDEX IF NOT EXISTS idx_whatsapp_conversations_phone ON whatsapp_conversations(phone);
             CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_conversation ON whatsapp_messages(conversation_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_webhook_events_pending ON whatsapp_webhook_events(status, next_attempt_at);
             CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON page_views(created_at);
             CREATE INDEX IF NOT EXISTS idx_page_views_visitor ON page_views(visitor_id, session_id);
             CREATE INDEX IF NOT EXISTS idx_admin_sessions_expiry ON admin_sessions(expires_at, revoked_at);
+            CREATE INDEX IF NOT EXISTS idx_blog_posts_public ON blog_posts(status, published_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_blog_posts_category ON blog_posts(category);
             """
         )
         if not conn.postgres:
@@ -438,7 +542,11 @@ def init_db() -> None:
                 "fbclid": "TEXT",
             },
         )
-        ensure_columns(conn, "whatsapp_outbox", {"provider_message_id": "TEXT"})
+        ensure_columns(
+            conn,
+            "whatsapp_outbox",
+            {"provider_message_id": "TEXT", "next_attempt_at": "TEXT"},
+        )
         ensure_columns(
             conn,
             "whatsapp_messages",
@@ -473,7 +581,12 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_page_views_origin ON page_views(utm_source, utm_campaign)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON page_views(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_page_views_visitor ON page_views(visitor_id, session_id)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_webhook_events_pending "
+            "ON whatsapp_webhook_events(status, next_attempt_at)"
+        )
         if conn.postgres:
+            upgrade_lead_kind_constraint(conn)
             conn.execute(
                 "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?) "
                 "ON CONFLICT (version) DO NOTHING",
@@ -486,6 +599,19 @@ def init_db() -> None:
             )
             install_integrity_triggers(conn)
     cleanup_expired_data()
+
+
+def upgrade_lead_kind_constraint(conn: ConnectionAdapter) -> None:
+    if not conn.postgres:
+        return
+    conn.execute("ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_kind_check")
+    conn.execute(
+        """
+        ALTER TABLE leads
+        ADD CONSTRAINT leads_kind_check
+        CHECK (kind IN ('trabalhista', 'instituto', 'bpc', 'geral'))
+        """
+    )
 
 
 def migrate_conversations_schema(conn: ConnectionAdapter) -> None:
@@ -592,9 +718,11 @@ def deduplicate_provider_messages(conn: ConnectionAdapter) -> None:
 def install_integrity_triggers(conn: ConnectionAdapter) -> None:
     conn.executescript(
         """
+        DROP TRIGGER IF EXISTS validate_lead_kind_insert;
+
         CREATE TRIGGER IF NOT EXISTS validate_lead_kind_insert
         BEFORE INSERT ON leads
-        WHEN NEW.kind NOT IN ('trabalhista', 'instituto', 'geral')
+        WHEN NEW.kind NOT IN ('trabalhista', 'instituto', 'bpc', 'geral')
         BEGIN SELECT RAISE(ABORT, 'invalid lead kind'); END;
 
         CREATE TRIGGER IF NOT EXISTS validate_message_direction_insert
@@ -680,7 +808,7 @@ def get_lead_by_request_key(request_key: str | None) -> dict[str, Any] | None:
         return dict(row) if row else None
 
 
-def create_lead_bundle(data: dict[str, Any], first_message: str) -> tuple[int, int, int]:
+def create_lead_bundle(data: dict[str, Any], first_message: str) -> tuple[int, int, int, bool]:
     """Create the lead, outbox row and isolated case conversation atomically."""
     with connect() as conn:
         existing = None
@@ -699,7 +827,7 @@ def create_lead_bundle(data: dict[str, Any], first_message: str) -> tuple[int, i
                 (existing["id"],),
             ).fetchone()
             if outbox and conversation:
-                return int(existing["id"]), int(outbox["id"]), int(conversation["id"])
+                return int(existing["id"]), int(outbox["id"]), int(conversation["id"]), False
 
         lead_cursor = conn.execute(
             """
@@ -766,7 +894,7 @@ def create_lead_bundle(data: dict[str, Any], first_message: str) -> tuple[int, i
                 lead_id,
             ),
         )
-        return lead_id, int(outbox_cursor.lastrowid), int(conversation_cursor.lastrowid)
+        return lead_id, int(outbox_cursor.lastrowid), int(conversation_cursor.lastrowid), True
 
 
 def enqueue_whatsapp(lead_id: int, recipient: str, message: str, status: str = "pending", error: str | None = None) -> int:
@@ -893,6 +1021,17 @@ def record_whatsapp_message(
         return int(cursor.lastrowid)
 
 
+def whatsapp_message_exists(provider_message_id: str) -> bool:
+    if not provider_message_id:
+        return False
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id FROM whatsapp_messages WHERE provider_message_id = ?",
+            (provider_message_id,),
+        ).fetchone()
+        return bool(row)
+
+
 def list_conversations(limit: int = 80, offset: int = 0, query: str = "") -> list[dict[str, Any]]:
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
@@ -904,7 +1043,8 @@ def list_conversations(limit: int = 80, offset: int = 0, query: str = "") -> lis
         """
         params: list[Any] = []
         if query.strip():
-            sql += " WHERE name LIKE ? OR phone LIKE ? OR kind LIKE ?"
+            operator = "ILIKE" if conn.postgres else "LIKE"
+            sql += f" WHERE name {operator} ? OR phone {operator} ? OR kind {operator} ?"
             needle = f"%{query.strip()[:80]}%"
             params.extend([needle, needle, needle])
         sql += " ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?"
@@ -972,24 +1112,135 @@ def mark_outbox_sent(outbox_id: int, status: str = "sent", provider_message_id: 
             UPDATE whatsapp_outbox
             SET status = ?,
                 sent_at = CASE WHEN ? = 'dry_run' THEN sent_at ELSE ? END,
-                attempts = attempts + 1,
+                attempts = attempts + CASE WHEN ? = 'dry_run' THEN 0 ELSE 1 END,
                 provider_message_id = COALESCE(NULLIF(?, ''), provider_message_id),
-                last_error = NULL
+                last_error = NULL,
+                next_attempt_at = NULL
             WHERE id = ?
             """,
-            (status, status, utc_now(), provider_message_id or "", outbox_id),
+            (status, status, utc_now(), status, provider_message_id or "", outbox_id),
         )
 
 
 def mark_outbox_failed(outbox_id: int, error: str) -> None:
     with connect() as conn:
+        row = conn.execute("SELECT attempts FROM whatsapp_outbox WHERE id = ?", (outbox_id,)).fetchone()
+        attempts = int(row["attempts"] or 0) + 1 if row else 1
+        delay_minutes = min(60, 2 ** min(attempts, 5))
+        next_attempt = (datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)).isoformat(
+            timespec="seconds"
+        )
         conn.execute(
             """
             UPDATE whatsapp_outbox
-            SET status = 'pending', attempts = attempts + 1, last_error = ?
+            SET status = CASE WHEN ? >= 5 THEN 'failed' ELSE 'pending' END,
+                attempts = attempts + 1,
+                last_error = ?,
+                next_attempt_at = ?
             WHERE id = ?
             """,
-            (error[:500], outbox_id),
+            (attempts, error[:500], next_attempt, outbox_id),
+        )
+
+
+def list_pending_outbox(limit: int = 20) -> list[dict[str, Any]]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT o.id, o.lead_id, o.recipient, o.message, o.attempts,
+                   l.name, l.kind, l.area
+            FROM whatsapp_outbox o
+            JOIN leads l ON l.id = o.lead_id
+            WHERE o.status = 'pending'
+              AND o.attempts < 5
+              AND (o.next_attempt_at IS NULL OR o.next_attempt_at <= ?)
+            ORDER BY o.id ASC
+            LIMIT ?
+            """,
+            (utc_now(), max(1, min(limit, 100))),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def enqueue_whatsapp_webhook(raw_body: bytes) -> tuple[int, bool]:
+    payload_hash = hashlib.sha256(raw_body).hexdigest()
+    payload = raw_body.decode("utf-8")
+    with connect() as conn:
+        if conn.postgres:
+            cursor = conn.execute(
+                """
+                INSERT INTO whatsapp_webhook_events(created_at, payload_hash, payload, status)
+                VALUES (?, ?, ?, 'pending')
+                ON CONFLICT (payload_hash) DO NOTHING
+                """,
+                (utc_now(), payload_hash, payload),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                INSERT OR IGNORE INTO whatsapp_webhook_events(created_at, payload_hash, payload, status)
+                VALUES (?, ?, ?, 'pending')
+                """,
+                (utc_now(), payload_hash, payload),
+            )
+        created = bool(cursor.rowcount)
+        row = conn.execute(
+            "SELECT id FROM whatsapp_webhook_events WHERE payload_hash = ?",
+            (payload_hash,),
+        ).fetchone()
+        if not row:
+            raise RuntimeError("Não foi possível registrar o evento do WhatsApp.")
+        return int(row["id"]), created
+
+
+def list_pending_whatsapp_webhooks(limit: int = 20) -> list[dict[str, Any]]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, payload, attempts
+            FROM whatsapp_webhook_events
+            WHERE status = 'pending'
+              AND attempts < 8
+              AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+            ORDER BY id ASC
+            LIMIT ?
+            """,
+            (utc_now(), max(1, min(limit, 100))),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def mark_whatsapp_webhook_processed(event_id: int) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE whatsapp_webhook_events
+            SET status = 'processed', processed_at = ?, payload = '{}',
+                last_error = NULL, next_attempt_at = NULL
+            WHERE id = ?
+            """,
+            (utc_now(), event_id),
+        )
+
+
+def mark_whatsapp_webhook_failed(event_id: int, error: str) -> None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT attempts FROM whatsapp_webhook_events WHERE id = ?", (event_id,)
+        ).fetchone()
+        attempts = int(row["attempts"] or 0) + 1 if row else 1
+        delay_minutes = min(60, 2 ** min(attempts, 5))
+        next_attempt = (datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)).isoformat(
+            timespec="seconds"
+        )
+        conn.execute(
+            """
+            UPDATE whatsapp_webhook_events
+            SET status = CASE WHEN ? >= 8 THEN 'failed' ELSE 'pending' END,
+                attempts = attempts + 1, last_error = ?, next_attempt_at = ?
+            WHERE id = ?
+            """,
+            (attempts, error[:500], next_attempt, event_id),
         )
 
 
@@ -1053,9 +1304,11 @@ def can_auto_reply(conversation_id: int, cooldown_seconds: int) -> bool:
         if last:
             try:
                 last_time = datetime.fromisoformat(last)
+                if last_time.tzinfo is None:
+                    last_time = last_time.replace(tzinfo=timezone.utc)
                 if datetime.now(timezone.utc) - last_time < timedelta(seconds=cooldown_seconds):
                     return False
-            except ValueError:
+            except (TypeError, ValueError):
                 pass
         return True
 
@@ -1112,8 +1365,10 @@ def admin_snapshot(limit: int = 50) -> dict[str, Any]:
             """
             SELECT
                 COUNT(*) AS leads_total,
-                SUM(CASE WHEN kind = 'trabalhista' THEN 1 ELSE 0 END) AS trabalhista_total,
-                SUM(CASE WHEN kind = 'instituto' THEN 1 ELSE 0 END) AS instituto_total
+                SUM(CASE WHEN kind = 'trabalhista' OR area = 'trabalhista' THEN 1 ELSE 0 END) AS trabalhista_total,
+                SUM(CASE WHEN kind = 'instituto' OR area = 'instituto' THEN 1 ELSE 0 END) AS instituto_total,
+                SUM(CASE WHEN kind = 'bpc' OR area = 'previdenciario' OR source_path = '/bpc-loas-negado' OR landing_path = '/bpc-loas-negado' THEN 1 ELSE 0 END) AS bpc_total,
+                (SELECT COUNT(*) FROM whatsapp_conversations) AS conversations_total
             FROM leads
             """
         ).fetchone()
@@ -1121,9 +1376,18 @@ def admin_snapshot(limit: int = 50) -> dict[str, Any]:
             """
             SELECT
                 SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
-                SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
-                SUM(CASE WHEN status = 'dry_run' THEN 1 ELSE 0 END) AS dry_run
+                SUM(CASE WHEN status IN ('sent', 'delivered', 'read') THEN 1 ELSE 0 END) AS sent,
+                SUM(CASE WHEN status = 'dry_run' THEN 1 ELSE 0 END) AS dry_run,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
             FROM whatsapp_outbox
+            """
+        ).fetchone()
+        webhooks = conn.execute(
+            """
+            SELECT
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+            FROM whatsapp_webhook_events
             """
         ).fetchone()
         recent_leads = conn.execute(
@@ -1156,6 +1420,25 @@ def admin_snapshot(limit: int = 50) -> dict[str, Any]:
             LIMIT 10
             """
         ).fetchall()
+        analytics = conn.execute(
+            """
+            SELECT
+                COUNT(*) AS page_views,
+                COUNT(DISTINCT NULLIF(visitor_id, '')) AS unique_visitors,
+                COUNT(DISTINCT NULLIF(session_id, '')) AS sessions
+            FROM page_views
+            """
+        ).fetchone()
+        funnel = conn.execute(
+            """
+            SELECT
+                SUM(CASE WHEN path = '/' THEN 1 ELSE 0 END) AS institutional_visits,
+                SUM(CASE WHEN path = '/bpc-loas-negado' THEN 1 ELSE 0 END) AS bpc_visits,
+                SUM(CASE WHEN path = '/conversion/lead' OR path LIKE '/conversion/lead/%' THEN 1 ELSE 0 END) AS lead_conversions,
+                SUM(CASE WHEN path = '/conversion/whatsapp' OR path LIKE '/conversion/whatsapp/%' THEN 1 ELSE 0 END) AS whatsapp_clicks
+            FROM page_views
+            """
+        ).fetchone()
         origins = conn.execute(
             """
             SELECT
@@ -1191,9 +1474,12 @@ def admin_snapshot(limit: int = 50) -> dict[str, Any]:
         return {
             "totals": dict(totals or {}),
             "outbox": dict(outbox or {}),
+            "webhooks": dict(webhooks or {}),
             "recent_leads": [dict(row) for row in recent_leads],
             "recent_outbox": [dict(row) for row in recent_outbox],
             "page_views": [dict(row) for row in page_views],
+            "analytics": dict(analytics or {}),
+            "funnel": dict(funnel or {}),
             "origins": [dict(row) for row in origins],
             "conversations": [dict(row) for row in conversations],
             "messages": [dict(row) for row in messages],
@@ -1203,7 +1489,7 @@ def admin_snapshot(limit: int = 50) -> dict[str, Any]:
 def get_outbox_message(outbox_id: int) -> dict[str, Any] | None:
     with connect() as conn:
         row = conn.execute(
-            "SELECT id, recipient, message FROM whatsapp_outbox WHERE id = ?",
+            "SELECT id, lead_id, recipient, message, status, attempts FROM whatsapp_outbox WHERE id = ?",
             (outbox_id,),
         ).fetchone()
         return dict(row) if row else None
@@ -1271,12 +1557,70 @@ def cleanup_expired_data() -> None:
         timespec="seconds"
     )
     session_cutoff = int(datetime.now(timezone.utc).timestamp())
+    auth_event_cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=settings.auth_event_retention_days)
+    ).isoformat(timespec="seconds")
     with connect() as conn:
         conn.execute("DELETE FROM page_views WHERE created_at < ?", (analytics_cutoff,))
         conn.execute("DELETE FROM admin_sessions WHERE expires_at < ?", (session_cutoff,))
+        conn.execute("DELETE FROM admin_auth_events WHERE created_at < ?", (auth_event_cutoff,))
+        webhook_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(
+            timespec="seconds"
+        )
+        conn.execute(
+            """
+            DELETE FROM whatsapp_webhook_events
+            WHERE status IN ('processed', 'failed')
+              AND COALESCE(processed_at, created_at) < ?
+            """,
+            (webhook_cutoff,),
+        )
 
 
-def delete_contact_data(phone: str) -> dict[str, int]:
+def contact_media_urls(phone: str) -> list[str]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT m.media_url
+            FROM whatsapp_messages m
+            JOIN whatsapp_conversations c ON c.id = m.conversation_id
+            WHERE c.phone = ? AND m.media_url IS NOT NULL AND m.media_url != ''
+            """,
+            (phone,),
+        ).fetchall()
+        return [str(row["media_url"]) for row in rows]
+
+
+def list_expired_contact_phones() -> list[str]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=settings.lead_retention_days)).isoformat(
+        timespec="seconds"
+    )
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT contacts.phone
+            FROM (
+                SELECT phone FROM leads
+                UNION
+                SELECT phone FROM whatsapp_conversations
+            ) contacts
+            WHERE NOT EXISTS (
+                SELECT 1 FROM leads l
+                WHERE l.phone = contacts.phone
+                  AND (l.created_at >= ? OR l.status NOT IN ('closed', 'archived'))
+            )
+              AND NOT EXISTS (
+                SELECT 1 FROM whatsapp_conversations c
+                WHERE c.phone = contacts.phone
+                  AND (c.updated_at >= ? OR c.status NOT IN ('closed', 'archived'))
+            )
+            """,
+            (cutoff, cutoff),
+        ).fetchall()
+        return [str(row["phone"]) for row in rows]
+
+
+def delete_contact_data(phone: str) -> dict[str, Any]:
     """Delete one contact's cases, messages and lead history for a verified privacy request."""
     with connect() as conn:
         lead_rows = conn.execute("SELECT id FROM leads WHERE phone = ?", (phone,)).fetchall()
@@ -1286,27 +1630,237 @@ def delete_contact_data(phone: str) -> dict[str, int]:
         ).fetchall()
         conversation_ids = [int(row["id"]) for row in conversation_rows]
         message_count = 0
-        if conversation_ids:
-            placeholders = ",".join("?" for _ in conversation_ids)
-            message_count = conn.execute(
-                f"SELECT COUNT(*) AS count FROM whatsapp_messages WHERE conversation_id IN ({placeholders})",
-                conversation_ids,
-            ).fetchone()["count"]
-            conn.execute(
-                f"DELETE FROM whatsapp_messages WHERE conversation_id IN ({placeholders})",
-                conversation_ids,
+        for conversation_id in conversation_ids:
+            message_count += int(
+                conn.execute(
+                    "SELECT COUNT(*) AS count FROM whatsapp_messages WHERE conversation_id = ?",
+                    (conversation_id,),
+                ).fetchone()["count"]
             )
             conn.execute(
-                f"DELETE FROM whatsapp_conversations WHERE id IN ({placeholders})",
-                conversation_ids,
+                "DELETE FROM whatsapp_messages WHERE conversation_id = ?",
+                (conversation_id,),
             )
-        if lead_ids:
-            placeholders = ",".join("?" for _ in lead_ids)
-            conn.execute(f"DELETE FROM lead_events WHERE lead_id IN ({placeholders})", lead_ids)
-            conn.execute(f"DELETE FROM whatsapp_outbox WHERE lead_id IN ({placeholders})", lead_ids)
-            conn.execute(f"DELETE FROM leads WHERE id IN ({placeholders})", lead_ids)
+            conn.execute(
+                "DELETE FROM whatsapp_conversations WHERE id = ?",
+                (conversation_id,),
+            )
+        for lead_id in lead_ids:
+            conn.execute("DELETE FROM lead_events WHERE lead_id = ?", (lead_id,))
+            conn.execute("DELETE FROM whatsapp_outbox WHERE lead_id = ?", (lead_id,))
+            conn.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
         return {
             "leads": len(lead_ids),
             "conversations": len(conversation_ids),
             "messages": int(message_count),
         }
+
+
+def _blog_slug(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.strip().lower())
+    ascii_value = "".join(character for character in normalized if not unicodedata.combining(character))
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_value).strip("-")[:120]
+    return slug or "artigo"
+
+
+def _available_blog_slug(conn: ConnectionAdapter, title: str) -> str:
+    base = _blog_slug(title)
+    candidate = base
+    suffix = 2
+    while conn.execute("SELECT id FROM blog_posts WHERE slug = ?", (candidate,)).fetchone():
+        ending = f"-{suffix}"
+        candidate = f"{base[: 120 - len(ending)]}{ending}"
+        suffix += 1
+    return candidate
+
+
+def save_blog_post(
+    *,
+    post_id: int | None,
+    title: str,
+    excerpt: str,
+    body: str,
+    category: str,
+    status: str,
+) -> dict[str, Any]:
+    if status not in {"draft", "published"}:
+        raise ValueError("Status de artigo inválido.")
+    now = utc_now()
+    with connect() as conn:
+        if post_id is None:
+            slug = _available_blog_slug(conn, title)
+            published_at = now if status == "published" else None
+            cursor = conn.execute(
+                """
+                INSERT INTO blog_posts (
+                    created_at, updated_at, published_at, title, slug, excerpt,
+                    body, category, author_name, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    now,
+                    published_at,
+                    title,
+                    slug,
+                    excerpt,
+                    body,
+                    category,
+                    "Leonilda Bob",
+                    status,
+                ),
+            )
+            post_id = int(cursor.lastrowid)
+        else:
+            existing = conn.execute(
+                "SELECT id, published_at FROM blog_posts WHERE id = ?", (post_id,)
+            ).fetchone()
+            if not existing:
+                raise LookupError("Artigo não encontrado.")
+            published_at = existing["published_at"]
+            if status == "published" and not published_at:
+                published_at = now
+            conn.execute(
+                """
+                UPDATE blog_posts
+                SET updated_at = ?, published_at = ?, title = ?, excerpt = ?,
+                    body = ?, category = ?, status = ?
+                WHERE id = ?
+                """,
+                (now, published_at, title, excerpt, body, category, status, post_id),
+            )
+        row = conn.execute("SELECT * FROM blog_posts WHERE id = ?", (post_id,)).fetchone()
+        return dict(row)
+
+
+def get_blog_post_by_id(post_id: int) -> dict[str, Any] | None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM blog_posts WHERE id = ?", (post_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_published_blog_post(slug: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM blog_posts WHERE slug = ? AND status = 'published'",
+            (slug,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def list_blog_posts_admin() -> list[dict[str, Any]]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM blog_posts
+            ORDER BY CASE WHEN status = 'draft' THEN 0 ELSE 1 END, updated_at DESC, id DESC
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def blog_admin_totals() -> dict[str, int]:
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published,
+                   SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) AS drafts
+            FROM blog_posts
+            """
+        ).fetchone()
+        return {
+            "total": int(row["total"] or 0),
+            "published": int(row["published"] or 0),
+            "drafts": int(row["drafts"] or 0),
+        }
+
+
+def list_published_blog_posts(
+    *,
+    limit: int = 12,
+    offset: int = 0,
+    query: str = "",
+    category: str = "",
+) -> tuple[list[dict[str, Any]], int]:
+    clean_query = query.strip()
+    clean_category = category.strip()
+    if clean_query and clean_category:
+        term = f"%{clean_query}%"
+        params: tuple[Any, ...] = (term, term, term, clean_category)
+        count_sql = """
+            SELECT COUNT(*) AS count FROM blog_posts
+            WHERE status = 'published'
+              AND (LOWER(title) LIKE LOWER(?) OR LOWER(excerpt) LIKE LOWER(?) OR LOWER(body) LIKE LOWER(?))
+              AND category = ?
+        """
+        select_sql = """
+            SELECT * FROM blog_posts
+            WHERE status = 'published'
+              AND (LOWER(title) LIKE LOWER(?) OR LOWER(excerpt) LIKE LOWER(?) OR LOWER(body) LIKE LOWER(?))
+              AND category = ?
+            ORDER BY published_at DESC, id DESC LIMIT ? OFFSET ?
+        """
+    elif clean_query:
+        term = f"%{clean_query}%"
+        params = (term, term, term)
+        count_sql = """
+            SELECT COUNT(*) AS count FROM blog_posts
+            WHERE status = 'published'
+              AND (LOWER(title) LIKE LOWER(?) OR LOWER(excerpt) LIKE LOWER(?) OR LOWER(body) LIKE LOWER(?))
+        """
+        select_sql = """
+            SELECT * FROM blog_posts
+            WHERE status = 'published'
+              AND (LOWER(title) LIKE LOWER(?) OR LOWER(excerpt) LIKE LOWER(?) OR LOWER(body) LIKE LOWER(?))
+            ORDER BY published_at DESC, id DESC LIMIT ? OFFSET ?
+        """
+    elif clean_category:
+        params = (clean_category,)
+        count_sql = """
+            SELECT COUNT(*) AS count FROM blog_posts
+            WHERE status = 'published' AND category = ?
+        """
+        select_sql = """
+            SELECT * FROM blog_posts
+            WHERE status = 'published' AND category = ?
+            ORDER BY published_at DESC, id DESC LIMIT ? OFFSET ?
+        """
+    else:
+        params = ()
+        count_sql = "SELECT COUNT(*) AS count FROM blog_posts WHERE status = 'published'"
+        select_sql = """
+            SELECT * FROM blog_posts
+            WHERE status = 'published'
+            ORDER BY published_at DESC, id DESC LIMIT ? OFFSET ?
+        """
+    with connect() as conn:
+        count_row = conn.execute(count_sql, params).fetchone()
+        rows = conn.execute(
+            select_sql,
+            (*params, limit, offset),
+        ).fetchall()
+        return [dict(row) for row in rows], int(count_row["count"] or 0)
+
+
+def list_published_blog_categories() -> list[dict[str, Any]]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT category, COUNT(*) AS count
+            FROM blog_posts
+            WHERE status = 'published'
+            GROUP BY category
+            ORDER BY category
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def unpublish_blog_post(post_id: int) -> bool:
+    with connect() as conn:
+        cursor = conn.execute(
+            "UPDATE blog_posts SET status = 'draft', updated_at = ? WHERE id = ?",
+            (utc_now(), post_id),
+        )
+        return cursor.rowcount > 0

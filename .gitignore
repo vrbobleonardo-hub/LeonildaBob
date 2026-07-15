@@ -1,5 +1,7 @@
 .env
+.codex/
 .venv/
+design-source/
 data/*.sqlite
 data/*.sqlite-*
 data/uploads/
@@ -7,6 +9,7 @@ tmp/smoke.sqlite
 tmp/pycache/
 tmp/
 output/
+backups/
 static/uploads/whatsapp/*
 !static/uploads/whatsapp/.gitkeep
 __pycache__/

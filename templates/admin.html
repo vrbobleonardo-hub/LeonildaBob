@@ -1,35 +1,15 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 
-{% block content %}
-<section class="admin-shell" data-admin-app>
-  <aside class="admin-sidebar" aria-label="Navegação interna">
-    <a class="admin-brand" href="/admin">
-      <img src="/static/assets/bobadv-logo.png" alt="Bob Advogados">
-      <span>Painel interno</span>
-    </a>
+{% block admin_content %}
+<section class="admin-shell" data-admin-app data-max-upload-bytes="{{ max_upload_bytes }}">
+  {% include "partials/admin_sidebar.html" %}
 
-    <nav class="admin-nav">
-      <a href="#visao">Visão geral</a>
-      <a href="#contatos">Contatos</a>
-      <a href="#origens">Origem dos acessos</a>
-      <a href="#whatsapp">WhatsApp</a>
-      <a href="#mensagens">Mensagens</a>
-      <a href="#envios">Envios</a>
-      <a href="#conexao">Conexão</a>
-    </nav>
-
-    <form method="post" action="/admin/logout" class="admin-logout">
-      <span>{{ admin_user.username }}</span>
-      <button type="submit">Sair</button>
-    </form>
-  </aside>
-
-  <main class="admin-main">
-    <header class="admin-top" id="visao">
+  <main class="admin-main" id="conteudo-admin">
+    <header class="admin-top admin-top-compact" id="visao">
       <div>
         <p class="eyebrow">Bob Advogados</p>
-        <h1>Atendimento e WhatsApp.</h1>
-        <p>Contatos do site, origem dos acessos e conversas em um só lugar.</p>
+        <h1>Central de atendimento.</h1>
+        <p>Fila de contatos, conversas do WhatsApp, origem dos leads e próximos passos em uma tela operacional.</p>
       </div>
       <div class="admin-status-pill {{ 'is-ready' if official_ready and not dry_run else 'is-test' }}">
         {% if dry_run %}
@@ -44,8 +24,8 @@
       </div>
     </header>
 
-    <section class="admin-metric-grid" aria-label="Resumo">
-      <article>
+    <section class="admin-metric-grid admin-metric-grid-modern" aria-label="Resumo">
+      <article class="is-primary">
         <span>{{ snapshot.totals.leads_total or 0 }}</span>
         <p>Contatos recebidos</p>
       </article>
@@ -58,51 +38,137 @@
         <p>Instituto</p>
       </article>
       <article>
-        <span>{{ snapshot.conversations|length }}</span>
+        <span>{{ snapshot.totals.bpc_total or 0 }}</span>
+        <p>BPC/LOAS</p>
+      </article>
+      <article>
+        <span>{{ snapshot.totals.conversations_total or 0 }}</span>
         <p>Conversas</p>
+      </article>
+      <article>
+        <span>{{ snapshot.funnel.bpc_visits or 0 }}</span>
+        <p>Visitas landing BPC</p>
+      </article>
+      <article>
+        <span>{{ snapshot.funnel.whatsapp_clicks or 0 }}</span>
+        <p>Cliques WhatsApp</p>
+      </article>
+      <article>
+        <span>{{ snapshot.funnel.lead_conversions or 0 }}</span>
+        <p>Formulários enviados</p>
+      </article>
+      <article>
+        <span>{{ snapshot.analytics.unique_visitors or 0 }}</span>
+        <p>Visitantes autorizados</p>
       </article>
     </section>
 
-    <section class="admin-panel" id="whatsapp">
+    <section class="admin-panel admin-attendance-panel" id="whatsapp">
       <div class="admin-panel-heading">
         <div>
           <p class="eyebrow">WhatsApp</p>
-          <h2>Chat de atendimento</h2>
+          <h2>Atendimento</h2>
         </div>
-        <p>Suporta texto, imagens, áudio, documentos e vídeos.</p>
+        <p>Inbox operacional para organizar conversas, enviar arquivos, controlar automação e acompanhar o status do contato.</p>
       </div>
 
-      <div class="admin-chat">
-        <div class="chat-list" data-conversation-list>
+      <div class="attendance-summary" aria-label="Situação do atendimento">
+        <article>
+          <span>{{ snapshot.totals.conversations_total or 0 }}</span>
+          <strong>Conversas</strong>
+          <p>Atendimentos registrados</p>
+        </article>
+        <article>
+          <span>{{ snapshot.outbox.pending or 0 }}</span>
+          <strong>Fila</strong>
+          <p>Envios aguardando</p>
+        </article>
+        <article>
+          <span>{{ snapshot.outbox.failed or 0 }}</span>
+          <strong>Atenção</strong>
+          <p>Falhas de envio</p>
+        </article>
+        <article>
+          <span>{{ snapshot.webhooks.pending or 0 }}</span>
+          <strong>Recebimento</strong>
+          <p>Eventos pendentes</p>
+        </article>
+      </div>
+
+      <div class="admin-chat admin-chat-modern">
+        <aside class="chat-list-shell" aria-label="Fila de conversas">
+          <div class="chat-list-heading">
+            <div>
+              <strong>Conversas</strong>
+              <span>Selecione um atendimento</span>
+            </div>
+            <span data-chat-count>{{ snapshot.conversations | length }}</span>
+          </div>
+          <label class="chat-search">
+            <span>Buscar</span>
+            <input type="search" data-conversation-search placeholder="Nome, telefone ou área">
+          </label>
+          <div class="chat-filter-bar" aria-label="Filtrar conversas">
+            <button type="button" data-chat-filter="all" aria-pressed="true">Todas</button>
+            <button type="button" data-chat-filter="open" aria-pressed="false">Abertas</button>
+            <button type="button" data-chat-filter="closed" aria-pressed="false">Encerradas</button>
+            <button type="button" data-chat-filter="bot" aria-pressed="false">Automação</button>
+          </div>
+          <div class="chat-list" data-conversation-list>
           {% for item in snapshot.conversations %}
-          <button type="button" data-conversation-id="{{ item.id }}" class="chat-contact {{ 'is-active' if loop.first else '' }}">
-            <strong>{{ item.name or item.phone }}</strong>
-            <span>{{ item.phone }}</span>
-            <small>{{ item.last_message_preview or "Sem mensagem registrada." }}</small>
+          <button type="button" data-conversation-id="{{ item.id }}" data-status="{{ item.status }}" data-kind="{{ item.kind or 'geral' }}" data-bot="{{ 'true' if item.bot_enabled else 'false' }}" aria-pressed="false" class="chat-contact">
+            <span class="chat-contact-avatar">{{ (item.name or item.phone or '?')[:1] }}</span>
+            <span class="chat-contact-main">
+              <strong>{{ item.name or item.phone }}</strong>
+              <small>{{ item.last_message_preview or "Sem mensagem registrada." }}</small>
+            </span>
+            <span class="chat-contact-meta">
+              <small>{{ item.kind or "geral" }}</small>
+              <small>{{ "Bot" if item.bot_enabled else item.status }}</small>
+            </span>
           </button>
           {% else %}
           <div class="admin-empty">Nenhuma conversa registrada ainda.</div>
           {% endfor %}
-        </div>
-
-        <div class="chat-window">
-          <div class="chat-header" data-chat-header>
-            <strong>Selecione uma conversa</strong>
-            <span>As mensagens aparecerão aqui.</span>
           </div>
-          <div class="chat-messages" data-chat-messages>
+          <button type="button" class="chat-load-more" data-conversation-more>Carregar mais</button>
+        </aside>
+
+        <div class="chat-window" aria-label="Mensagens da conversa">
+          <div class="chat-header" data-chat-header>
+            <div><strong>Selecione uma conversa</strong><span>As mensagens aparecerão aqui.</span></div>
+            <div class="chat-controls" data-chat-controls hidden>
+              <button type="button" data-toggle-bot>Automação</button>
+              <button type="button" data-close-conversation>Encerrar conversa</button>
+            </div>
+          </div>
+          <div class="chat-messages" data-chat-messages role="log" aria-live="polite" aria-relevant="additions">
             <div class="admin-empty">Nenhuma conversa selecionada.</div>
           </div>
+          <div class="quick-replies" aria-label="Respostas rápidas">
+            <button type="button" data-quick-reply="Olá, recebemos sua mensagem. Para organizar o atendimento, pode nos enviar os documentos principais e um breve resumo do caso?">Pedir documentos</button>
+            <button type="button" data-quick-reply="Obrigado pelo envio. Vamos verificar as informações e retornaremos com os próximos passos.">Confirmar recebimento</button>
+            <button type="button" data-quick-reply="Para uma análise responsável, precisamos confirmar alguns dados antes de orientar os próximos passos.">Solicitar dados</button>
+          </div>
           <form class="chat-compose" data-chat-form enctype="multipart/form-data">
-            <textarea name="text" rows="2" placeholder="Escreva a mensagem"></textarea>
+            <label class="sr-only" for="chat-message">Mensagem</label>
+            <textarea id="chat-message" name="text" rows="2" maxlength="4096" placeholder="Escreva uma resposta clara para o contato"></textarea>
             <label class="file-pill">
-              <input type="file" name="attachment" accept="image/*,audio/*,video/mp4,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt">
-              Anexar
+              <input type="file" name="attachment" data-chat-file accept=".jpg,.jpeg,.png,.webp,.gif,.aac,.amr,.mp3,.m4a,.ogg,.oga,.opus,.mp4,.m4v,.3gp,.3gpp,.pdf,.doc,.docx,.xls,.xlsx,.txt">
+              <span data-file-label>Anexar</span>
             </label>
             <button type="submit">Enviar</button>
           </form>
-          <p class="chat-note" data-chat-note>Envios ficam em modo teste até a conexão oficial estar ativa.</p>
+          <p class="chat-note" data-chat-note aria-live="polite">{{ "Envios estão em modo de teste." if dry_run else "Envios reais estão ativos." }}</p>
         </div>
+
+        <aside class="chat-detail-panel" data-chat-detail aria-label="Dados do contato">
+          <div class="chat-detail-empty">
+            <span>Dados</span>
+            <strong>Nenhuma conversa selecionada.</strong>
+            <p>Ao selecionar um contato, os dados do atendimento aparecerão aqui.</p>
+          </div>
+        </aside>
       </div>
     </section>
 
@@ -115,6 +181,7 @@
       </div>
       <div class="admin-table-wrap">
         <table>
+          <caption>Contatos recebidos pelo site</caption>
           <thead>
             <tr>
               <th>Data</th>
@@ -123,20 +190,33 @@
               <th>WhatsApp</th>
               <th>Origem</th>
               <th>Mensagem</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
             {% for lead in snapshot.recent_leads %}
             <tr>
-              <td>{{ lead.created_at }}</td>
+              <td><time datetime="{{ lead.created_at }}" data-datetime>{{ lead.created_at }}</time></td>
               <td>{{ lead.name }}</td>
-              <td>{{ lead.kind }}</td>
+              <td>
+                {% if lead.kind == 'bpc' %}BPC/LOAS{% elif lead.kind == 'trabalhista' %}Trabalhista{% elif lead.kind == 'instituto' %}Instituto{% else %}{{ lead.area or "Geral" }}{% endif %}
+              </td>
               <td>{{ lead.phone }}</td>
-              <td>{{ lead.utm_source or "direto" }}{% if lead.utm_campaign %}<br><small>{{ lead.utm_campaign }}</small>{% endif %}</td>
+              <td>
+                {{ lead.utm_source or "direto" }}{% if lead.utm_campaign %}<br><small>{{ lead.utm_campaign }}</small>{% endif %}
+                <br><small>{{ lead.source_path or lead.landing_path or "sem rota registrada" }}</small>
+              </td>
               <td>{{ lead.message or "—" }}</td>
+              <td>
+                <select data-lead-status="{{ lead.id }}" aria-label="Status de {{ lead.name }}">
+                  {% for value, label in [('new','Novo'),('contacted','Contatado'),('qualified','Qualificado'),('closed','Concluído'),('archived','Arquivado')] %}
+                  <option value="{{ value }}" {{ 'selected' if lead.status == value else '' }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </td>
             </tr>
             {% else %}
-            <tr><td colspan="6">Nenhum contato recebido ainda.</td></tr>
+            <tr><td colspan="7">Nenhum contato recebido ainda.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -194,6 +274,7 @@
       </div>
       <div class="admin-table-wrap">
         <table>
+          <caption>Fila de primeiros contatos no WhatsApp</caption>
           <thead>
             <tr>
               <th>Contato</th>
@@ -201,6 +282,7 @@
               <th>Status</th>
               <th>Tentativas</th>
               <th>Erro</th>
+              <th>Ação</th>
             </tr>
           </thead>
           <tbody>
@@ -211,13 +293,30 @@
               <td>{{ item.status }}</td>
               <td>{{ item.attempts }}</td>
               <td>{{ item.last_error or "—" }}</td>
+              <td>{% if item.status in ['failed', 'dry_run'] %}<button type="button" data-retry-outbox="{{ item.id }}">Tentar novamente</button>{% else %}—{% endif %}</td>
             </tr>
             {% else %}
-            <tr><td colspan="5">Nenhum envio registrado.</td></tr>
+            <tr><td colspan="6">Nenhum envio registrado.</td></tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
+    </section>
+
+    <section class="admin-panel" id="privacidade">
+      <div class="admin-panel-heading">
+        <div>
+          <p class="eyebrow">Privacidade</p>
+          <h2>Exclusão de dados verificada</h2>
+        </div>
+        <p>Use somente após confirmar a identidade e registrar a solicitação do titular.</p>
+      </div>
+      <form class="privacy-delete-form" data-privacy-delete>
+        <label for="privacy-phone">Telefone do titular</label>
+        <input id="privacy-phone" name="phone" type="tel" autocomplete="off" required placeholder="(11) 99999-9999">
+        <button type="submit">Excluir dados</button>
+        <p data-privacy-note aria-live="polite"></p>
+      </form>
     </section>
 
     <section class="admin-panel" id="conexao">
@@ -249,6 +348,11 @@
           <span>Conferência</span>
           <strong>{{ "Definida" if verify_token_set else "Pendente" }}</strong>
           <p>Usada pela Meta para confirmar que este site recebe mensagens.</p>
+        </article>
+        <article>
+          <span>Fila de recebimento</span>
+          <strong>{{ snapshot.webhooks.pending or 0 }} aguardando</strong>
+          <p>{{ snapshot.webhooks.failed or 0 }} evento(s) exigem análise após as retentativas.</p>
         </article>
       </div>
 

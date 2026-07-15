@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero compact-hero">
+  <p class="eyebrow">Privacidade</p>
+  <h1>Como tratamos seus dados.</h1>
+  <p>Informações claras sobre o formulário, métricas e atendimento pelo WhatsApp.</p>
+</section>
+
+<section class="section privacy-content">
+  <article>
+    <h2>Responsável pelo tratamento</h2>
+    <p>Bob Advogados, representado pelos profissionais identificados neste site, com atendimento em {{ address }}.</p>
+  </article>
+  <article>
+    <h2>Dados coletados</h2>
+    <p>Quando você envia o formulário, recebemos nome, telefone, e-mail opcional, área jurídica, resumo do assunto, origem da visita e dados técnicos necessários à segurança do serviço.</p>
+  </article>
+  <article>
+    <h2>Finalidades</h2>
+    <p>Usamos os dados para responder ao contato, organizar a triagem, manter o histórico do atendimento, proteger o site contra abuso e medir o funcionamento das páginas quando você autoriza métricas.</p>
+  </article>
+  <article>
+    <h2>Compartilhamento e operadores</h2>
+    <p>Os dados podem ser processados pelos provedores de hospedagem, banco e armazenamento privados e pela plataforma oficial do WhatsApp. O mapa do Google só é carregado mediante autorização.</p>
+  </article>
+  <article>
+    <h2>Retenção</h2>
+    <p>Métricas de navegação são mantidas por até {{ analytics_retention_days }} dias. Contatos e históricos de atendimento são revisados e mantidos por até {{ lead_retention_days }} dias, salvo necessidade jurídica, obrigação aplicável ou pedido de exclusão válido.</p>
+  </article>
+  <article>
+    <h2>Suas escolhas</h2>
+    <p>Você pode continuar no site sem autorizar métricas, revogar a escolha no rodapé e usar sinais de privacidade do navegador, que são respeitados automaticamente. Também pode solicitar confirmação, correção ou exclusão de dados pelo WhatsApp <a href="https://wa.me/{{ whatsapp_digits }}">{{ whatsapp_display }}</a>. A identidade será verificada antes de qualquer alteração.</p>
+  </article>
+  <article>
+    <h2>Segurança</h2>
+    <p>O painel é protegido, arquivos de atendimento não são publicados e o acesso administrativo usa sessões revogáveis. Nenhum envio pelo site substitui uma análise jurídica formal.</p>
+  </article>
+  <p><small>Última atualização: 6 de julho de 2026.</small></p>
+</section>
+{% endblock %}

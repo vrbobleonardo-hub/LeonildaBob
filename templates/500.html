@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero compact-hero">
+  <p class="eyebrow">Indisponibilidade temporária</p>
+  <h1>Não foi possível concluir agora.</h1>
+  <p>Tente novamente em alguns instantes. Se preferir, fale diretamente com o atendimento.</p>
+  <div class="hero-actions">
+    <a class="button button-primary" href="/">Voltar ao início</a>
+    <a class="button button-ghost" href="https://wa.me/{{ whatsapp_digits }}">Abrir WhatsApp</a>
+  </div>
+</section>
+{% endblock %}

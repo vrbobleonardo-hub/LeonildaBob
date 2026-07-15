@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% if preview_mode %}
+<aside class="article-preview-banner" role="status">
+  <strong>Esta é uma prévia.</strong>
+  <span>Somente pessoas conectadas ao painel conseguem ver esta página.</span>
+  <a href="/admin/artigos/{{ post.id }}/editar">Voltar para a edição</a>
+</aside>
+{% endif %}
+<article class="blog-article">
+  <header class="blog-article-header">
+    <a class="blog-back-link" href="/blog">Voltar aos artigos</a>
+    <p class="eyebrow">{{ post.category }}</p>
+    <h1>{{ post.title }}</h1>
+    <p class="blog-article-deck">{{ post.excerpt }}</p>
+    <div class="blog-article-meta">
+      <span>Por {{ post.author_name }}</span>
+      <time datetime="{{ post.published_at }}">{{ post.display_date }}</time>
+      <span>{{ post.reading_minutes }} min de leitura</span>
+    </div>
+  </header>
+
+  <div class="blog-article-layout">
+    <aside class="blog-author-card" aria-label="Sobre a autora">
+      <p class="eyebrow">Autora</p>
+      <strong>Leonilda Bob</strong>
+      <span>Advogada · OAB/SP 85.766</span>
+      <p>Mais de quatro décadas entre a advocacia, a docência e a formação acadêmica.</p>
+    </aside>
+    <div class="blog-article-body">
+      {% for block in post.body_blocks %}<p>{{ block }}</p>{% endfor %}
+      <aside class="article-notice">
+        <strong>Informação importante</strong>
+        <p>Este artigo tem caráter informativo e não substitui a análise individual de um caso.</p>
+      </aside>
+    </div>
+  </div>
+</article>
+
+{% if related_posts %}
+<section class="section related-posts">
+  <div class="blog-section-heading">
+    <div>
+      <p class="eyebrow">Continue lendo</p>
+      <h2>Outros artigos sobre este tema.</h2>
+    </div>
+  </div>
+  <div class="blog-card-grid blog-card-grid-compact">
+    {% for item in related_posts %}
+    <article class="blog-card">
+      <p class="blog-card-category">{{ item.category }}</p>
+      <h3><a href="/blog/{{ item.slug }}">{{ item.title }}</a></h3>
+      <p>{{ item.excerpt }}</p>
+      <a class="text-link" href="/blog/{{ item.slug }}">Ler artigo</a>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

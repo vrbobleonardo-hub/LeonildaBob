@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero blog-hero">
+  <p class="eyebrow">Artigos de Leonilda Bob</p>
+  <h1>Ideias para compreender direitos e caminhos.</h1>
+  <p>Reflexões construídas a partir da advocacia, da docência e da experiência de vida.</p>
+</section>
+
+<section class="section blog-editorial-intro" aria-labelledby="blog-editorial-title">
+  <div>
+    <p class="eyebrow">Educação jurídica</p>
+    <h2 id="blog-editorial-title">Um espaço para explicar temas jurídicos sem transformar informação em promessa.</h2>
+  </div>
+  <div class="rich-text">
+    <p>Os artigos têm caráter informativo e ajudam o leitor a entender documentos, prazos, relações de trabalho, atendimento público, consumo e formação jurídica.</p>
+    <p>A leitura não substitui análise individual, mas pode orientar quais informações reunir antes do primeiro contato.</p>
+  </div>
+</section>
+
+<section class="section blog-index">
+  <div class="blog-tools">
+    <form class="blog-search" method="get" action="/blog" role="search">
+      <label for="blog-search">Buscar nos artigos</label>
+      <div>
+        <input id="blog-search" name="busca" type="search" value="{{ search_query }}" maxlength="100" placeholder="Digite uma palavra ou assunto">
+        {% if selected_category %}<input type="hidden" name="tema" value="{{ selected_category }}">{% endif %}
+        <button type="submit">Buscar</button>
+      </div>
+    </form>
+
+    <nav class="blog-topics" aria-label="Temas dos artigos">
+      {% for item in categories %}
+      <a href="/blog?tema={{ item.category | urlencode }}{% if search_query %}&amp;busca={{ search_query | urlencode }}{% endif %}" {% if selected_category == item.category %}aria-current="page"{% endif %}>{{ item.category }} <span>{{ item.count }}</span></a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  <div class="blog-results-heading">
+    <div>
+      <p class="eyebrow">{{ selected_category or 'Publicações' }}</p>
+      <h2>{% if search_query %}Resultados para “{{ search_query }}”{% else %}Textos recentes{% endif %}</h2>
+    </div>
+    <p>{{ total_posts }} {{ 'artigo encontrado' if total_posts == 1 else 'artigos encontrados' }}</p>
+  </div>
+
+  {% if posts %}
+  <div class="blog-card-grid">
+    {% for post in posts %}
+    <article class="blog-card">
+      <p class="blog-card-category">{{ post.category }}</p>
+      <h3><a href="/blog/{{ post.slug }}">{{ post.title }}</a></h3>
+      <p>{{ post.excerpt }}</p>
+      <div class="blog-card-meta">
+        <time datetime="{{ post.published_at }}">{{ post.display_date }}</time>
+        <span>{{ post.reading_minutes }} min de leitura</span>
+      </div>
+      <a class="text-link" href="/blog/{{ post.slug }}">Ler artigo</a>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="blog-empty-state">
+    <p class="eyebrow">Caderno jurídico</p>
+    <h2>{% if search_query or selected_category %}Nenhum artigo corresponde à sua busca.{% else %}Novos artigos estão em preparação.{% endif %}</h2>
+    <p>{% if search_query or selected_category %}Refaça a busca ou consulte todos os temas disponíveis.{% else %}Enquanto isso, consulte as áreas de atendimento ou organize as informações para o primeiro contato.{% endif %}</p>
+    <div class="blog-empty-actions">
+      {% if search_query or selected_category %}
+      <a class="button button-secondary" href="/blog">Limpar busca</a>
+      {% else %}
+      <a class="button button-secondary" href="/atuacao">Conhecer áreas de atuação</a>
+      <a class="text-link" href="/contato">Iniciar atendimento</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if total_pages > 1 %}
+  <nav class="blog-pagination" aria-label="Páginas dos artigos">
+    {% if current_page > 1 %}<a href="/blog?pagina={{ current_page - 1 }}&amp;busca={{ search_query | urlencode }}&amp;tema={{ selected_category | urlencode }}">Anterior</a>{% endif %}
+    <span>Página {{ current_page }} de {{ total_pages }}</span>
+    {% if current_page < total_pages %}<a href="/blog?pagina={{ current_page + 1 }}&amp;busca={{ search_query | urlencode }}&amp;tema={{ selected_category | urlencode }}">Próxima</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% endblock %}

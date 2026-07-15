@@ -1,0 +1,80 @@
+{% extends "admin_base.html" %}
+
+{% block admin_content %}
+<section class="admin-shell admin-blog-shell">
+  {% include "partials/admin_sidebar.html" %}
+
+  <main class="admin-main" id="conteudo-admin">
+    <header class="admin-editor-header">
+      <div>
+        <a class="admin-back-link" href="/admin/artigos">Voltar para meus artigos</a>
+        <p class="eyebrow">{{ 'Editar artigo' if post.id else 'Novo artigo' }}</p>
+        <h1>{{ 'Revise seu texto.' if post.id else 'Conte o que você sabe.' }}</h1>
+        <p>Não precisa se preocupar com a aparência. O site organiza o texto para você.</p>
+      </div>
+      {% if post.id %}<a class="admin-preview-link" href="/admin/artigos/{{ post.id }}/previa" target="_blank" rel="noopener">Ver prévia <span class="sr-only">(abre em nova aba)</span></a>{% endif %}
+    </header>
+
+    {% if error %}<div class="admin-notice is-error" role="alert"><strong>Revise antes de continuar:</strong> {{ error }}</div>{% endif %}
+
+    <form class="article-editor" method="post" action="/admin/artigos/salvar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="post_id" value="{{ post.id or '' }}">
+
+      <div class="article-editor-main">
+        <label for="article-title">
+          Título do artigo
+          <span>Uma frase clara que diga sobre o que você vai falar.</span>
+        </label>
+        <input id="article-title" name="title" value="{{ post.title or '' }}" minlength="5" maxlength="160" required placeholder="Exemplo: O que observar antes de assinar uma rescisão">
+
+        <label for="article-excerpt">
+          Pequena apresentação
+          <span>Este texto aparece na lista de artigos e ajuda o leitor a escolher.</span>
+        </label>
+        <textarea id="article-excerpt" name="excerpt" rows="4" minlength="20" maxlength="360" required placeholder="Conte em poucas linhas o que o leitor encontrará no artigo.">{{ post.excerpt or '' }}</textarea>
+
+        <label for="article-body">
+          Texto do artigo
+          <span>Separe os assuntos deixando uma linha em branco entre os parágrafos.</span>
+        </label>
+        <textarea id="article-body" name="body" rows="22" minlength="80" maxlength="50000" required placeholder="Comece a escrever aqui...">{{ post.body or '' }}</textarea>
+      </div>
+
+      <aside class="article-editor-side">
+        <div class="article-editor-card">
+          <label for="article-category">
+            Tema principal
+            <span>Escolha o assunto que mais combina com o texto.</span>
+          </label>
+          <select id="article-category" name="category" required>
+            {% for category in blog_categories %}
+            <option value="{{ category }}" {{ 'selected' if post.category == category else '' }}>{{ category }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="article-writing-tips">
+          <p class="eyebrow">Para ficar gostoso de ler</p>
+          <ul>
+            <li>Use frases curtas e diretas.</li>
+            <li>Deixe uma linha vazia entre os parágrafos.</li>
+            <li>Evite dados pessoais de clientes.</li>
+            <li>Leia uma vez antes de publicar.</li>
+          </ul>
+        </div>
+
+        <div class="article-editor-actions">
+          {% if post.status == 'published' %}
+          <p>Este artigo já está publicado. Salvar mantém o texto no ar com as novas alterações.</p>
+          <button class="is-primary" type="submit" name="action" value="publish">Salvar alterações</button>
+          {% else %}
+          <button type="submit" name="action" value="draft">Guardar para terminar depois</button>
+          <button class="is-primary" type="submit" name="action" value="publish">Publicar no site</button>
+          {% endif %}
+        </div>
+      </aside>
+    </form>
+  </main>
+</section>
+{% endblock %}

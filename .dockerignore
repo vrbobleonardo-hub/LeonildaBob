@@ -1,0 +1,11 @@
+.git
+.venv
+.env
+__pycache__
+*.pyc
+data
+tmp
+output
+backups
+.playwright-cli
+design-source

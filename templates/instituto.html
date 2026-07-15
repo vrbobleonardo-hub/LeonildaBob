@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% from "partials/forms.html" import lead_form %}
+{% from "partials/forms.html" import lead_form with context %}
 
 {% block content %}
 <section class="page-hero institute-hero">
   <p class="eyebrow">Em constituição</p>
-  <h1>Instituto Leonilda Bob.</h1>
+  <h1><span>Instituto</span><span>Leonilda</span><span>Bob.</span></h1>
   <p>Iniciativa dedicada a apoiar bacharéis em Direito na preparação para o Exame da OAB.</p>
 </section>
 
-<section class="section split">
+<section class="section institute-purpose">
   <div>
     <p class="eyebrow">Propósito</p>
     <h2>Orientação para quem concluiu Direito e ainda busca a aprovação na OAB.</h2>
@@ -23,21 +23,41 @@
       uma lista inicial de contato.
     </p>
   </div>
+  <blockquote>
+    <p>“Preparar-se também é aprender a continuar, organizar o caminho e confiar no próprio processo.”</p>
+    <cite>Princípio orientador do Instituto</cite>
+  </blockquote>
 </section>
 
 <section class="section institute-pillars">
+  <h2 class="sr-only">Pilares do Instituto Leonilda Bob</h2>
   <article>
+    <span>01</span>
     <h3>Mentoria</h3>
     <p>Direcionamento para rotina de estudos, organização de conteúdo e postura diante da prova.</p>
   </article>
   <article>
+    <span>02</span>
     <h3>Comunidade</h3>
     <p>Acolhimento a bacharéis que precisam de método, continuidade e troca orientada.</p>
   </article>
   <article>
+    <span>03</span>
     <h3>Desenvolvimento</h3>
     <p>Fortalecimento acadêmico e profissional para os primeiros passos na carreira jurídica.</p>
   </article>
+</section>
+
+<section class="section institute-journey">
+  <div class="section-kicker">
+    <p class="eyebrow">Caminho proposto</p>
+    <h2>Da retomada dos estudos à construção de uma rotina possível.</h2>
+  </div>
+  <ol>
+    <li><span>01</span><div><h3>Entender o momento</h3><p>Reconhecer dificuldades, histórico de provas e disponibilidade real para estudar.</p></div></li>
+    <li><span>02</span><div><h3>Organizar o percurso</h3><p>Definir prioridades, ritmo de revisão e uma rotina que possa ser mantida.</p></div></li>
+    <li><span>03</span><div><h3>Acompanhar a evolução</h3><p>Observar avanços, ajustar o método e fortalecer a continuidade da preparação.</p></div></li>
+  </ol>
 </section>
 
 <section class="section institute-program">
@@ -58,6 +78,23 @@
       <h3>Cadastro de interesse</h3>
       <p>Como o Instituto está em constituição, o formulário organiza uma lista inicial de interessados para contato futuro.</p>
     </article>
+  </div>
+</section>
+
+<section class="section institute-context" aria-labelledby="institute-context-title">
+  <div>
+    <p class="eyebrow">Por que o Instituto existe</p>
+    <h2 id="institute-context-title">A experiência da advocacia e da docência transformada em orientação.</h2>
+  </div>
+  <div class="rich-text">
+    <p>O Exame da OAB costuma exigir mais do que repetição de conteúdo. Muitos bacharéis precisam retomar método, confiança, disciplina e leitura prática das matérias.</p>
+    <p>O Instituto Leonilda Bob nasce para organizar esse apoio de forma responsável, com foco educacional e sem promessas de aprovação.</p>
+    <ul class="inline-topics">
+      <li>Método de estudo</li>
+      <li>Rotina possível</li>
+      <li>Acompanhamento</li>
+      <li>Postura profissional</li>
+    </ul>
   </div>
 </section>
 

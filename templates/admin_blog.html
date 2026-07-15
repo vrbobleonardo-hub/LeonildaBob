@@ -1,0 +1,73 @@
+{% extends "admin_base.html" %}
+
+{% block admin_content %}
+<section class="admin-shell admin-blog-shell">
+  {% include "partials/admin_sidebar.html" %}
+
+  <main class="admin-main" id="conteudo-admin">
+    <header class="admin-top admin-blog-top">
+      <div>
+        <p class="eyebrow">Artigos de Leonilda</p>
+        <h1>Meus artigos.</h1>
+        <p>Escreva com calma, guarde para terminar depois e publique quando estiver pronto.</p>
+      </div>
+      <a class="admin-primary-action" href="/admin/artigos/novo">Escrever novo artigo</a>
+    </header>
+
+    {% if notice %}<p class="admin-notice is-success" role="status">{{ notice }}</p>{% endif %}
+
+    <section class="blog-admin-summary" aria-label="Resumo dos artigos">
+      <article><span>{{ totals.published }}</span><p>Publicados</p></article>
+      <article><span>{{ totals.drafts }}</span><p>Guardados para depois</p></article>
+      <article><span>{{ totals.total }}</span><p>Total de artigos</p></article>
+    </section>
+
+    <section class="admin-panel blog-admin-list-panel">
+      <div class="admin-panel-heading">
+        <div>
+          <p class="eyebrow">Sua biblioteca</p>
+          <h2>Textos escritos</h2>
+        </div>
+        <p>Os textos “guardados” só aparecem aqui. Os publicados já podem ser lidos no site.</p>
+      </div>
+
+      <div class="blog-admin-list">
+        {% for item in posts %}
+        <article class="blog-admin-row">
+          <div class="blog-admin-row-main">
+            <div class="blog-admin-row-status">
+              <span class="article-status {{ 'is-published' if item.status == 'published' else 'is-draft' }}">
+                {{ 'Publicado' if item.status == 'published' else 'Guardado' }}
+              </span>
+              <span>{{ item.category }}</span>
+            </div>
+            <h3>{{ item.title }}</h3>
+            <p>{{ item.excerpt }}</p>
+            <small>Última alteração: <time datetime="{{ item.updated_at }}" data-datetime>{{ item.updated_at }}</time></small>
+          </div>
+          <div class="blog-admin-row-actions">
+            <a href="/admin/artigos/{{ item.id }}/editar">Editar</a>
+            {% if item.status == 'published' %}
+            <a href="/blog/{{ item.slug }}" target="_blank" rel="noopener">Ver no site <span class="sr-only">(abre em nova aba)</span></a>
+            <form method="post" action="/admin/artigos/{{ item.id }}/retirar">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit">Retirar do ar</button>
+            </form>
+            {% else %}
+            <a href="/admin/artigos/{{ item.id }}/previa" target="_blank" rel="noopener">Ver prévia <span class="sr-only">(abre em nova aba)</span></a>
+            {% endif %}
+          </div>
+        </article>
+        {% else %}
+        <div class="blog-admin-empty">
+          <p class="eyebrow">Primeiro texto</p>
+          <h3>Sua área de artigos está pronta.</h3>
+          <p>Comece pelo título. Você poderá guardar o texto e continuar quando quiser.</p>
+          <a class="admin-primary-action" href="/admin/artigos/novo">Escrever meu primeiro artigo</a>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </main>
+</section>
+{% endblock %}

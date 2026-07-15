@@ -1,3 +1,4 @@
+{% from "partials/icons.html" import whatsapp_link, whatsapp_icon with context %}
 <!doctype html>
 <html lang="pt-BR">
   <head>
@@ -5,25 +6,54 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title }}</title>
     <meta name="description" content="{{ description }}">
-    <meta name="theme-color" content="#11140f">
-    <link rel="icon" href="/static/assets/bobadv-logo.png">
-    <link rel="stylesheet" href="/static/styles.css">
+    {% if page in ['obrigado', 'form-error', 'not-found', 'internal-error', 'blog-preview'] %}<meta name="robots" content="noindex, nofollow, noarchive">{% endif %}
+    <meta name="theme-color" content="{{ '#002344' if page == 'landing-bpc' else '#11140f' }}">
+    <link rel="canonical" href="{{ canonical_url }}">
+    <meta property="og:type" content="{{ og_type }}">
+    <meta property="og:locale" content="pt_BR">
+    <meta property="og:site_name" content="Bob Advogados">
+    <meta property="og:title" content="{{ title }}">
+    <meta property="og:description" content="{{ description }}">
+    <meta property="og:url" content="{{ canonical_url }}">
+    <meta property="og:image" content="{{ social_image_url }}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="675">
+    <meta property="og:image:alt" content="Ambiente do Bob Advogados">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ title }}">
+    <meta name="twitter:description" content="{{ description }}">
+    <meta name="twitter:image" content="{{ social_image_url }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/assets/favicon-32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/assets/apple-touch-icon.png">
+    <link rel="stylesheet" href="/static/styles.css?v=20260715k">
+    <script type="application/ld+json" nonce="{{ csp_nonce }}">{{ structured_data | tojson }}</script>
   </head>
   <body class="page-{{ page }}">
     <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+    {% if page in ['landing-bpc', 'blog-post'] %}<div class="scroll-progress" aria-hidden="true"><span data-scroll-progress></span></div>{% endif %}
     <header class="site-header" data-header>
-      <a class="brand" href="/" aria-label="Leonilda Bob | Bob Advogados">
-        <img src="/static/assets/bobadv-logo-full.png" alt="Bob Advogados">
+      <a class="brand" href="/" aria-label="Bob Advogados — página inicial">
+        <img src="/static/assets/bobadv-logo-full.png" width="460" height="166" alt="Bob Advogados">
       </a>
+      {% if page == 'landing-bpc' %}<div class="accessibility-tools" aria-label="Ajustes de acessibilidade">
+        <button type="button" data-contrast-toggle aria-pressed="false">Contraste</button>
+        <button type="button" data-font-toggle aria-pressed="false">A+</button>
+      </div>{% endif %}
       <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav" data-menu-toggle>
-        Menu
+        <span data-menu-label>Menu</span>
       </button>
-      <nav id="site-nav" class="site-nav" data-site-nav>
-        <a href="/sobre" class="{{ 'active' if page == 'sobre' else '' }}">Sócios</a>
-        <a href="/atuacao" class="{{ 'active' if page == 'atuacao' else '' }}">Atuação</a>
-        <a href="/instituto" class="{{ 'active' if page == 'instituto' else '' }}">Instituto</a>
-        <a href="/contato" class="{{ 'active' if page == 'contato' else '' }}">Contato</a>
+      <nav id="site-nav" class="site-nav" aria-label="Navegação principal" data-site-nav aria-hidden="true" inert>
+        <a href="/sobre" {% if page == 'sobre' %}aria-current="page"{% endif %}>Trajetória</a>
+        <a href="/atuacao" {% if page == 'atuacao' %}aria-current="page"{% endif %}>Atuação</a>
+        <a href="/instituto" {% if page == 'instituto' %}aria-current="page"{% endif %}>Instituto</a>
+        <a href="/blog" {% if page == 'blog' or page == 'blog-post' %}aria-current="page"{% endif %}>Artigos</a>
+        <a href="/contato" {% if page == 'contato' %}aria-current="page"{% endif %}>Contato</a>
       </nav>
+      <noscript>
+        <nav class="noscript-nav" aria-label="Navegação principal sem JavaScript">
+          <a href="/">Início</a> · <a href="/sobre">Trajetória</a> · <a href="/atuacao">Atuação</a> · <a href="/instituto">Instituto</a> · <a href="/blog">Artigos</a> · <a href="/contato">Contato</a>
+        </nav>
+      </noscript>
     </header>
 
     <main id="conteudo">
@@ -31,31 +61,73 @@
     </main>
 
     <footer class="site-footer">
-      <div>
-        <img src="/static/assets/bobadv-logo-full.png" alt="Bob Advogados" class="footer-logo">
+      {% if page not in ['home', 'sobre', 'atuacao', 'instituto', 'contato', 'landing-bpc'] %}
+      <div class="footer-cta">
+        <div>
+          <p class="eyebrow">Bob Advogados</p>
+          <h2>Uma orientação responsável começa por uma conversa clara.</h2>
+        </div>
+        <a class="button button-primary" href="/contato">Iniciar atendimento</a>
+      </div>
+      {% endif %}
+      <div class="footer-column footer-brand-column">
+        <img src="/static/assets/logo-bob.png" width="500" height="500" alt="Marca Bob Advogados" class="footer-logo" loading="lazy" decoding="async">
         <p>Assessoria jurídica ética, estratégica e personalizada.</p>
-        <p>Leonilda Bob · OAB/SP 85.766<br>Victor Ladislau Bob · OAB/SP 282.631</p>
+        <p>Leonilda Bob · OAB/SP 85.766</p>
       </div>
-      <div>
+      <div class="footer-column footer-contact-column">
         <p class="footer-title">Atendimento</p>
-        <p>{{ whatsapp_display }}</p>
-        <p>Presencial e online</p>
+        <address>
+          <p>{{ whatsapp_link("Chamar no WhatsApp", "whatsapp-inline whatsapp-footer-link") }}</p>
+          {% if contact_email %}<p><a href="mailto:{{ contact_email }}">{{ contact_email }}</a></p>{% endif %}
+          <p>{{ office_hours }}</p>
+        </address>
       </div>
-      <div>
+      <div class="footer-column footer-address-column">
         <p class="footer-title">Endereço</p>
-        <p>{{ address }}<br>CEP 08790-610</p>
+        <address>
+          <p>{{ address }}<br>{{ address_zip }}</p>
+          <p><a href="https://www.google.com/maps/search/?api=1&amp;query={{ maps_query | urlencode }}" target="_blank" rel="noopener">Ver no mapa <span class="sr-only">(abre em nova aba)</span></a></p>
+        </address>
       </div>
-      <div>
-        <p class="footer-title">Áreas</p>
-        <p>
-          <a href="/atuacao#trabalhista">Trabalhista</a>,
-          <a href="/atuacao#consumidor">Consumidor</a>,
-          <a href="/atuacao#imobiliario">Imobiliário</a>,
-          <a href="/atuacao#tributario">Tributário</a> e
-          <a href="/atuacao#publico">Público</a>.
-        </p>
+      <div class="footer-column footer-links-column">
+        <p class="footer-title">Áreas e informações</p>
+        <nav aria-label="Links do rodapé">
+          <p>
+            <a href="/atuacao#trabalhista">Trabalhista</a>,
+            <a href="/atuacao#consumidor">Consumidor</a>,
+            <a href="/atuacao#imobiliario">Imobiliário</a>,
+            <a href="/atuacao#tributario">Tributário</a> e
+            <a href="/atuacao#publico">Público</a>.
+          </p>
+          <p><a href="/blog">Artigos de Leonilda Bob</a></p>
+          <p><a href="/politica-de-privacidade">Política de privacidade</a></p>
+          <p><button class="footer-privacy-button" type="button" data-consent-manage>Configurar privacidade</button></p>
+        </nav>
       </div>
+      <p class="footer-disclaimer">As informações deste site têm caráter institucional e informativo. Cada situação exige análise jurídica individual.</p>
     </footer>
+
+    {% if page == 'landing-bpc' %}
+    {% set floating_message = "Olá, gostaria de solicitar a triagem gratuita do meu caso de BPC/LOAS negado." %}
+    {% set floating_url = "https://wa.me/" ~ whatsapp_digits ~ "?text=" ~ (floating_message | urlencode) %}
+    <a class="floating-whatsapp" href="{{ floating_url }}" target="_blank" rel="noopener" aria-label="Solicitar triagem gratuita pelo WhatsApp">
+      {{ whatsapp_icon('eager') }}
+    </a>
+    <a class="mobile-sticky-cta" href="{{ floating_url }}" target="_blank" rel="noopener" data-mobile-sticky-cta>Solicitar Triagem do meu Caso</a>
+    {% endif %}
+
+    <aside class="consent-banner" data-consent-banner hidden aria-labelledby="consent-title">
+      <div>
+        <h2 id="consent-title" tabindex="-1">Privacidade no site</h2>
+        <p>Usamos armazenamento local e métricas próprias somente com sua autorização. O mapa do Google também só é carregado após sua escolha.</p>
+        <a href="/politica-de-privacidade">Ler a política</a>
+      </div>
+      <div class="consent-actions">
+        <button type="button" class="button button-secondary" data-consent-reject>Recusar recursos opcionais</button>
+        <button type="button" class="button button-primary" data-consent-accept>Autorizar métricas</button>
+      </div>
+    </aside>
 
     <script src="/static/js/site.js" defer></script>
   </body>

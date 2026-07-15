@@ -1,0 +1,252 @@
+{% set triage_message = "Olá, gostaria de solicitar a triagem gratuita do meu caso de BPC/LOAS negado." %}
+{% set checklist_message = "Olá, quero receber o checklist gratuito de documentos para BPC/LOAS." %}
+{% set triage_url = "https://wa.me/" ~ whatsapp_digits ~ "?text=" ~ (triage_message | urlencode) %}
+{% set checklist_url = "https://wa.me/" ~ whatsapp_digits ~ "?text=" ~ (checklist_message | urlencode) %}
+
+{% extends "base.html" %}
+{% from "partials/icons.html" import whatsapp_icon with context %}
+
+{% block content %}
+<section class="bpc-hero" id="inicio" aria-labelledby="bpc-hero-title">
+  <div class="bpc-hero-bg" aria-hidden="true"></div>
+  <div class="bpc-hero-grid">
+    <div class="bpc-hero-copy" data-reveal>
+      <p class="eyebrow">Bob Advogados Associados · BPC/LOAS</p>
+      <h1 id="bpc-hero-title">BPC/LOAS negado? Analisamos seu caso sem custo.</h1>
+      <figure class="bpc-hero-photo bpc-hero-photo-mobile">
+        <picture>
+          <source srcset="/static/assets/leonilda-bpc-hero.webp" type="image/webp">
+          <img src="/static/assets/leonilda-cutout.png" width="720" height="1082" alt="Retrato profissional da Dra. Leonilda Bob" fetchpriority="high" decoding="async">
+        </picture>
+      </figure>
+      <p class="bpc-hero-subtitle">
+        Teve o benefício indeferido? Oferecemos uma análise técnica gratuita da sua carta de indeferimento para identificar erros comuns do INSS e orientar os próximos passos possíveis.
+      </p>
+      <div class="bpc-hero-actions">
+        <a class="button bpc-button bpc-button-whatsapp" href="{{ triage_url }}" target="_blank" rel="noopener">
+          <span class="bpc-button-icon" aria-hidden="true">
+            {{ whatsapp_icon('eager') }}
+          </span>
+          Solicitar Triagem do meu Caso
+        </a>
+        <a class="button bpc-button bpc-button-outline" href="#checklist">Receber checklist gratuito</a>
+      </div>
+      <p class="bpc-hero-note">Atendimento informativo, sigiloso e sem promessa de resultado. Cada caso exige análise individual.</p>
+    </div>
+
+    <figure class="bpc-hero-photo bpc-hero-photo-desktop" data-reveal>
+      <picture>
+        <source srcset="/static/assets/leonilda-bpc-hero.webp" type="image/webp">
+        <img src="/static/assets/leonilda-cutout.png" width="720" height="1082" alt="Retrato profissional da Dra. Leonilda Bob" fetchpriority="high" decoding="async">
+      </picture>
+    </figure>
+  </div>
+</section>
+
+<section class="bpc-proof-strip" aria-label="Autoridade e forma de atendimento">
+  <div data-reveal><strong>+40 anos</strong><span>de advocacia</span></div>
+  <div data-reveal><strong>OAB/SP 85.766</strong><span>Dra. Leonilda Bob</span></div>
+  <div data-reveal><strong>Brasil</strong><span>atendimento digital seguro</span></div>
+</section>
+
+<section class="section bpc-problems" aria-labelledby="problems-title">
+  <div class="bpc-section-heading" data-reveal>
+    <p class="eyebrow">Negativa do INSS</p>
+    <h2 id="problems-title">O indeferimento pode esconder pontos que merecem revisão.</h2>
+    <p>Na triagem, a equipe verifica a carta de indeferimento, a data do pedido, os documentos disponíveis e se há elementos para uma análise jurídica mais completa.</p>
+  </div>
+  <div class="bpc-problem-grid">
+    <article data-reveal>
+      <span>01</span>
+      <h3>Negou por renda familiar?</h3>
+      <p>Algumas despesas essenciais podem mudar a leitura da renda real da família.</p>
+    </article>
+    <article data-reveal>
+      <span>02</span>
+      <h3>Negou pela perícia?</h3>
+      <p>Laudos, relatórios e limitações do dia a dia precisam ser organizados tecnicamente.</p>
+    </article>
+    <article data-reveal>
+      <span>03</span>
+      <h3>Faltou documento?</h3>
+      <p>Nem sempre a negativa encerra o caminho. A documentação pode ser complementada.</p>
+    </article>
+  </div>
+</section>
+
+<section class="bpc-arrears" aria-labelledby="arrears-title">
+  <div class="bpc-arrears-card" data-reveal>
+    <p class="eyebrow">Ponto importante</p>
+    <h2 id="arrears-title">Você sabia que pode ter direito aos valores atrasados?</h2>
+    <p>
+      Quando a negativa é revertida e o direito ao benefício é reconhecido, pode haver pagamento dos valores acumulados desde a DER, que é a data do primeiro pedido no INSS. Esse ponto depende da análise do processo administrativo, das provas e da decisão aplicável ao caso.
+    </p>
+    <a class="button bpc-button bpc-button-whatsapp" href="{{ triage_url }}" target="_blank" rel="noopener">Solicitar Triagem do meu Caso</a>
+  </div>
+</section>
+
+<section class="section bpc-timeline" aria-labelledby="timeline-title">
+  <div class="bpc-section-heading" data-reveal>
+    <p class="eyebrow">Caminho de análise</p>
+    <h2 id="timeline-title">Do indeferimento à orientação jurídica responsável.</h2>
+  </div>
+  <ol class="bpc-timeline-list">
+    <li data-reveal>
+      <article>
+        <span class="bpc-line-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false"><path d="M7 5h10M7 9h10M7 13h6"/><path d="M5 3h14v18l-3-2-3 2-3-2-3 2-2-1.4V3Z"/></svg>
+        </span>
+        <h3>Envio da carta</h3>
+        <p>Você envia a carta de indeferimento e informa quando fez o pedido.</p>
+      </article>
+    </li>
+    <li data-reveal>
+      <article>
+        <span class="bpc-line-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false"><path d="M4 7h16M7 7V5h10v2M6 7l1 13h10l1-13"/><path d="M9 11h6M9 15h4"/></svg>
+        </span>
+        <h3>Organização dos documentos</h3>
+        <p>A equipe indica quais comprovantes ajudam a entender renda, saúde e contexto familiar.</p>
+      </article>
+    </li>
+    <li data-reveal>
+      <article>
+        <span class="bpc-line-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false"><path d="M12 3v18M5 8h14"/><path d="M7 8l-3 6h6L7 8Zm10 0-3 6h6l-3-6Z"/></svg>
+        </span>
+        <h3>Análise de viabilidade</h3>
+        <p>São avaliadas as medidas possíveis, inclusive a revisão judicial quando houver base técnica.</p>
+      </article>
+    </li>
+  </ol>
+</section>
+
+<section class="section bpc-checklist" id="checklist" aria-labelledby="checklist-title">
+  <div class="bpc-checklist-card" data-reveal>
+    <div>
+      <p class="eyebrow">Ferramenta gratuita</p>
+      <h2 id="checklist-title">Checklist: documentos essenciais para não errar no BPC.</h2>
+      <p>Receba uma lista objetiva para organizar carta de indeferimento, documentos pessoais, comprovantes de renda, despesas médicas e laudos.</p>
+      <a class="text-link" href="{{ checklist_url }}" target="_blank" rel="noopener">Prefiro receber direto no WhatsApp</a>
+    </div>
+    <form class="lead-form bpc-mini-form" data-lead-form method="post" action="/contato/enviar" aria-describedby="checklist-intro">
+      <input type="hidden" name="kind" value="bpc">
+      <input type="hidden" name="area" value="previdenciario">
+      <input type="hidden" name="email" value="">
+      <input type="hidden" name="message" value="Quero receber o checklist gratuito de documentos para BPC/LOAS e iniciar uma triagem.">
+      <input type="hidden" name="source_path" value="">
+      <input type="hidden" name="form_started_at" value="{{ form_started_at }}" data-form-started>
+      <input type="hidden" name="request_key" value="{{ form_request_key }}" data-request-key>
+      <div class="honeypot" aria-hidden="true">
+        <label for="checklist-website">Não preencha este campo</label>
+        <input id="checklist-website" name="website" tabindex="-1" autocomplete="off">
+      </div>
+      <div class="form-heading">
+        <p class="eyebrow">Receber guia</p>
+        <p id="checklist-intro">Informe apenas o essencial para receber orientação inicial pelo WhatsApp.</p>
+      </div>
+      <div class="form-field">
+        <label for="checklist-name">Nome <span aria-hidden="true">*</span></label>
+        <input id="checklist-name" name="name" type="text" autocomplete="name" required minlength="2" maxlength="120" placeholder="Seu nome">
+      </div>
+      <div class="form-field">
+        <label for="checklist-phone">WhatsApp <span aria-hidden="true">*</span></label>
+        <input id="checklist-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required minlength="10" maxlength="20" placeholder="(11) 99999-9999">
+      </div>
+      <div class="consent">
+        <input id="checklist-consent" name="consent" type="checkbox" required>
+        <label for="checklist-consent">Autorizo o contato pelo WhatsApp e o tratamento dos dados enviados para fins de atendimento, conforme a <a href="/politica-de-privacidade" target="_blank" rel="noopener">política de privacidade <span class="sr-only">(abre em nova aba)</span></a>.</label>
+      </div>
+      <button class="button bpc-button bpc-button-whatsapp" type="submit">Receber checklist no WhatsApp</button>
+      <p class="form-status" data-form-status role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></p>
+    </form>
+  </div>
+</section>
+
+<section class="section bpc-education" aria-labelledby="education-title">
+  <div class="bpc-section-heading" data-reveal>
+    <p class="eyebrow">Educação jurídica</p>
+    <h2 id="education-title">O que o INSS muitas vezes não aprofunda.</h2>
+    <p>A Justiça pode analisar o conjunto do caso com mais detalhes, especialmente quando a prova social, médica e econômica está bem organizada.</p>
+  </div>
+  <div class="bpc-education-grid">
+    <article data-reveal>
+      <span class="bpc-card-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false"><path d="M7 13h10M12 8v10"/><path d="M5 5h14v16H5z"/><path d="M8 3h8v2H8z"/></svg>
+      </span>
+      <h3>Despesas que reduzem a renda real</h3>
+      <p>Fraldas, remédios, consultas e tratamentos podem demonstrar que a renda disponível da família é menor do que parece no cálculo simples.</p>
+    </article>
+    <article data-reveal>
+      <span class="bpc-card-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/><path d="M17 3v4"/></svg>
+      </span>
+      <h3>Laudos ignorados ou mal interpretados</h3>
+      <p>Relatórios de especialistas particulares, exames e histórico de tratamento podem complementar a prova administrativa.</p>
+    </article>
+    <article data-reveal>
+      <span class="bpc-card-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false"><path d="M12 21s7-4.4 7-11V5l-7-3-7 3v5c0 6.6 7 11 7 11Z"/><path d="M9 12l2 2 4-5"/></svg>
+      </span>
+      <h3>Deficiência além do laudo médico</h3>
+      <p>O conceito considera impedimentos de longo prazo e barreiras sociais que dificultam a participação plena da pessoa.</p>
+    </article>
+  </div>
+</section>
+
+<section class="section bpc-conditions" aria-labelledby="conditions-title">
+  <div class="bpc-section-heading" data-reveal>
+    <p class="eyebrow">Direitos e condições</p>
+    <h2 id="conditions-title">Quem pode buscar a análise do BPC/LOAS?</h2>
+  </div>
+  <div class="bpc-condition-grid" data-reveal>
+    <article><h3>Idoso 65+</h3><p>Pessoa idosa em vulnerabilidade social, com renda familiar a ser analisada.</p></article>
+    <article><h3>Pessoa com deficiência</h3><p>Impedimento de longo prazo, físico, mental, intelectual ou sensorial.</p></article>
+    <article><h3>TEA e deficiência intelectual</h3><p>Casos que exigem prova do contexto familiar, escolar, social e terapêutico.</p></article>
+    <article><h3>Doenças incapacitantes</h3><p>Quando há impacto duradouro na autonomia e na participação social.</p></article>
+  </div>
+</section>
+
+<section class="bpc-security" aria-labelledby="security-title">
+  <div class="bpc-security-inner" data-reveal>
+    <p class="eyebrow">Segurança e sigilo</p>
+    <h2 id="security-title">Atendimento digital seguro em todo o Brasil.</h2>
+    <p>
+      O atendimento pode ser 100% online, com envio seguro de documentos, assinatura digital certificada quando necessária e acompanhamento processual pelos sistemas oficiais do Tribunal, como o PJe. Você recebe orientação clara sobre cada etapa, sem deslocamentos desnecessários.
+    </p>
+  </div>
+</section>
+
+<section class="section bpc-faq" aria-labelledby="faq-title">
+  <div class="bpc-section-heading" data-reveal>
+    <p class="eyebrow">Perguntas frequentes</p>
+    <h2 id="faq-title">Dúvidas financeiras antes de pedir ajuda.</h2>
+  </div>
+  <div class="bpc-faq-list" data-reveal>
+    <details>
+      <summary>Quanto custa a análise inicial?</summary>
+      <p>A triagem inicial da carta de indeferimento é gratuita. Se houver indicação de medida jurídica, os próximos passos e eventuais custos são explicados com transparência antes de qualquer contratação.</p>
+    </details>
+    <details>
+      <summary>E se eu não tiver todos os documentos agora?</summary>
+      <p>Você pode iniciar com a carta de indeferimento, documento pessoal e informações básicas. A equipe orienta quais comprovantes podem ser buscados depois para fortalecer a análise.</p>
+    </details>
+    <details>
+      <summary>Como recebo os valores se houver decisão favorável?</summary>
+      <p>O pagamento do benefício e de eventuais atrasados segue o procedimento definido no processo. A forma exata depende do valor, da decisão e do sistema judicial aplicável.</p>
+    </details>
+    <details>
+      <summary>O atendimento é apenas em Mogi das Cruzes?</summary>
+      <p>Não. A triagem e o acompanhamento podem ocorrer de forma digital, com atendimento seguro para pessoas em diferentes cidades do Brasil.</p>
+    </details>
+  </div>
+</section>
+
+<section class="section bpc-final-cta" aria-labelledby="final-cta-title">
+  <div data-reveal>
+    <p class="eyebrow">Triagem gratuita</p>
+    <h2 id="final-cta-title">Envie sua carta de indeferimento e entenda se há caminho de revisão.</h2>
+  </div>
+  <a class="button bpc-button bpc-button-whatsapp" href="{{ triage_url }}" target="_blank" rel="noopener">Iniciar Triagem Gratuita via WhatsApp</a>
+</section>
+{% endblock %}

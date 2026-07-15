@@ -1,34 +1,53 @@
 {% extends "base.html" %}
-{% from "partials/forms.html" import lead_form %}
+{% from "partials/forms.html" import lead_form with context %}
+{% from "partials/icons.html" import whatsapp_link with context %}
 
 {% block content %}
 <section class="page-hero">
   <p class="eyebrow">Contato</p>
   <h1>Atendimento presencial e online.</h1>
-  <p>{{ address }} · WhatsApp {{ whatsapp_display }}</p>
+  <p>{{ address }} · {{ address_zip }}</p>
 </section>
 
-<section class="section contact-layout">
+<section class="contact-paths" aria-label="Formas de atendimento">
+  {{ whatsapp_link("Chamar agora", "contact-path-whatsapp") }}
+  <a href="#formulario-contato">
+    <span>Conte o essencial</span><strong>Formulário</strong><small>Envie o resumo do assunto</small>
+  </a>
+  <a href="#localizacao">
+    <span>Com agendamento</span><strong>Presencial</strong><small>Mogi das Cruzes/SP</small>
+  </a>
+</section>
+
+<section class="section contact-layout" id="formulario-contato">
   <div class="contact-card">
     <p class="eyebrow">Bob Advogados</p>
     <h2>Fale com o escritório.</h2>
     <p>
       Envie seus dados pelo formulário. O primeiro retorno será feito via WhatsApp para organizar o atendimento inicial.
     </p>
-    <dl>
+    <address><dl>
       <div>
         <dt>WhatsApp</dt>
-        <dd>{{ whatsapp_display }}</dd>
+        <dd>{{ whatsapp_link("Chamar no WhatsApp", "whatsapp-inline whatsapp-card-link") }}</dd>
       </div>
       <div>
         <dt>Endereço</dt>
-        <dd>{{ address }}<br>CEP 08790-610</dd>
+        <dd>{{ address }}<br>{{ address_zip }}</dd>
+      </div>
+      <div>
+        <dt>OAB</dt>
+        <dd>Leonilda Bob · OAB/SP 85.766</dd>
       </div>
       <div>
         <dt>Formato</dt>
         <dd>Atendimento presencial e online.</dd>
       </div>
-    </dl>
+      <div>
+        <dt>Horário</dt>
+        <dd>{{ office_hours }}</dd>
+      </div>
+    </dl></address>
   </div>
   {{ lead_form("geral", "Contato geral", "Para questões trabalhistas, instituto ou outros assuntos jurídicos.", "Enviar contato") }}
 </section>
@@ -38,14 +57,14 @@
     <p class="eyebrow">Antes de enviar</p>
     <h2>Uma mensagem objetiva acelera o atendimento.</h2>
   </div>
-  <div class="guidance-list">
-    <p><span>01</span> Informe se o assunto é trabalhista, instituto ou outra área jurídica.</p>
-    <p><span>02</span> Resuma o fato principal em poucas linhas, com datas aproximadas quando houver.</p>
-    <p><span>03</span> Use um WhatsApp ativo, porque o primeiro retorno será feito por lá.</p>
-  </div>
+  <ol class="guidance-list">
+    <li><span>01</span> Informe se o assunto é trabalhista, instituto ou outra área jurídica.</li>
+    <li><span>02</span> Resuma o fato principal em poucas linhas, com datas aproximadas quando houver.</li>
+    <li><span>03</span> Use um WhatsApp ativo, porque o primeiro retorno será feito por lá.</li>
+  </ol>
 </section>
 
-<section class="section map-section">
+<section class="section map-section" id="localizacao">
   <div class="section-kicker">
     <p class="eyebrow">Localização</p>
     <h2>Atendimento em Mogi das Cruzes.</h2>
@@ -55,10 +74,16 @@
     <iframe
       title="Mapa do endereço Bob Advogados"
       loading="lazy"
-      referrerpolicy="no-referrer-when-downgrade"
-      src="https://www.google.com/maps?q={{ maps_query | urlencode }}&output=embed">
+      referrerpolicy="no-referrer"
+      data-map-src="https://www.google.com/maps?q={{ maps_query | urlencode }}&amp;output=embed"
+      data-consent-map
+      hidden>
     </iframe>
+    <div class="map-consent" data-map-placeholder>
+      <p>O mapa é fornecido pelo Google e só será carregado com sua autorização.</p>
+      <button type="button" class="button button-secondary" data-load-map>Carregar mapa</button>
+    </div>
   </div>
-  <a class="button button-secondary" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query={{ maps_query | urlencode }}">Abrir no Google Maps</a>
+  <a class="button button-secondary" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&amp;query={{ maps_query | urlencode }}">Abrir no Google Maps <span class="sr-only">(abre em nova aba)</span></a>
 </section>
 {% endblock %}

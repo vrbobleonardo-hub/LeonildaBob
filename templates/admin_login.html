@@ -1,25 +1,28 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 
-{% block content %}
-<section class="admin-login-page">
+{% block admin_content %}
+<main class="admin-login-page" id="conteudo-admin">
   <div class="admin-login-card">
-    <img src="/static/assets/bobadv-logo.png" alt="Bob Advogados">
+    <div class="admin-login-brand">
+      <img src="/static/assets/bobadv-logo.png" width="1080" height="1080" alt="Bob Advogados">
+    </div>
     <p class="eyebrow">Acesso interno</p>
     <h1>Entrar no painel</h1>
     <p>Área reservada para acompanhar contatos, mensagens e atendimento pelo WhatsApp.</p>
 
     {% if not auth_configured %}
-    <div class="login-warning">
+    <div class="login-warning" role="status">
       Configure usuário, senha e chave de sessão no arquivo local antes de usar o painel.
     </div>
     {% endif %}
 
     {% if error %}
-    <div class="login-error">{{ error }}</div>
+    <div class="login-error" role="alert">{{ error }}</div>
     {% endif %}
 
     <form method="post" action="/admin/login" class="login-form">
       <input type="hidden" name="next_path" value="{{ next_path }}">
+      <input type="hidden" name="login_csrf" value="{{ login_csrf }}">
       <label>
         Usuário
         <input name="username" autocomplete="username" required>
@@ -31,5 +34,5 @@
       <button type="submit" {{ "disabled" if not auth_configured else "" }}>Entrar</button>
     </form>
   </div>
-</section>
+</main>
 {% endblock %}

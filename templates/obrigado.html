@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero compact-hero">
+  <p class="eyebrow">Contato recebido</p>
+  <h1>Obrigado pelas informações.</h1>
+  <p>{{ result_message }}</p>
+  <div class="hero-actions">
+    <a class="button button-primary" href="/">Voltar ao início</a>
+    <a class="button button-ghost" href="https://wa.me/{{ whatsapp_digits }}">Abrir WhatsApp</a>
+  </div>
+</section>
+{% endblock %}

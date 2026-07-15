@@ -6,6 +6,7 @@ import hmac
 import secrets
 import time
 from dataclasses import dataclass
+from urllib.parse import quote
 
 from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -45,6 +46,8 @@ def verify_password(password: str) -> bool:
             if algorithm != "pbkdf2_sha256":
                 return False
             iterations = int(iterations_raw)
+            if iterations < 100_000 or iterations > 1_500_000:
+                return False
             digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations).hex()
             return hmac.compare_digest(digest, expected)
         except Exception:
@@ -72,10 +75,15 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _credential_fingerprint() -> str:
+    material = settings.admin_password_hash or settings.admin_password
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:24]
+
+
 def create_session_token(username: str) -> str:
     expires_at = int(time.time()) + max(settings.admin_session_ttl_seconds, 900)
     nonce = secrets.token_urlsafe(32)
-    payload = f"{username}:{expires_at}:{nonce}"
+    payload = f"{username}:{expires_at}:{nonce}:{_credential_fingerprint()}"
     signature = _sign(payload)
     token = base64.urlsafe_b64encode(f"{payload}:{signature}".encode("utf-8")).decode("ascii")
     db.create_admin_session(_token_hash(token), username, expires_at)
@@ -87,13 +95,15 @@ def verify_session_token(token: str | None) -> AdminUser | None:
         return None
     try:
         decoded = base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8")
-        username, expires_raw, nonce, signature = decoded.rsplit(":", 3)
-        payload = f"{username}:{expires_raw}:{nonce}"
+        username, expires_raw, nonce, credential_fingerprint, signature = decoded.rsplit(":", 4)
+        payload = f"{username}:{expires_raw}:{nonce}:{credential_fingerprint}"
         if not hmac.compare_digest(signature, _sign(payload)):
             return None
         if int(expires_raw) < int(time.time()):
             return None
         if not hmac.compare_digest(username, settings.admin_username):
+            return None
+        if not hmac.compare_digest(credential_fingerprint, _credential_fingerprint()):
             return None
         if not db.admin_session_is_active(_token_hash(token), username, int(time.time())):
             return None
@@ -115,7 +125,10 @@ def require_admin(request: Request) -> AdminUser:
         next_path = request.url.path
         if request.url.query:
             next_path = f"{next_path}?{request.url.query}"
-        raise HTTPException(status_code=303, headers={"Location": f"/admin/login?next={next_path}"})
+        raise HTTPException(
+            status_code=303,
+            headers={"Location": f"/admin/login?next={quote(next_path, safe='/')}"},
+        )
     raise HTTPException(status_code=401, detail="Acesso restrito.")
 
 
@@ -127,7 +140,7 @@ def build_login_response(username: str, next_path: str = "/admin") -> RedirectRe
         max_age=max(settings.admin_session_ttl_seconds, 900),
         httponly=True,
         samesite="lax",
-        secure=settings.app_base_url.startswith("https://"),
+        secure=settings.cookie_secure,
         path="/",
     )
     return response

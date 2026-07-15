@@ -1,0 +1,27 @@
+<aside class="admin-sidebar" aria-label="Navegação interna">
+  <a class="admin-brand" href="/admin">
+    <div class="admin-brand-mark">
+      <img src="/static/assets/logo-bob.png" width="500" height="500" alt="Bob Advogados">
+    </div>
+    <span>Painel interno</span>
+  </a>
+
+  <nav class="admin-nav">
+    <a href="/admin" {% if page == 'admin' %}aria-current="page"{% endif %}>Atendimento</a>
+    <a href="/admin/artigos" {% if page == 'admin-blog' %}aria-current="page"{% endif %}>Meus artigos</a>
+    <a href="/admin/artigos/novo" {% if page == 'admin-blog-editor' and not post.id %}aria-current="page"{% endif %}>Escrever novo artigo</a>
+    <a href="/blog" target="_blank" rel="noopener">Ver o blog <span class="sr-only">(abre em nova aba)</span></a>
+    {% if page == 'admin' %}
+    <a href="#contatos">Contatos</a>
+    <a href="#whatsapp">WhatsApp</a>
+    <a href="#mensagens">Mensagens</a>
+    <a href="#conexao">Conexão</a>
+    {% endif %}
+  </nav>
+
+  <form method="post" action="/admin/logout" class="admin-logout">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <span>{{ admin_user.username }}</span>
+    <button type="submit">Sair</button>
+  </form>
+</aside>
