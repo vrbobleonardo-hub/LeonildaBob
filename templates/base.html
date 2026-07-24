@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title }}</title>
     <meta name="description" content="{{ description }}">
-    {% if page in ['obrigado', 'form-error', 'not-found', 'internal-error', 'blog-preview'] %}<meta name="robots" content="noindex, nofollow, noarchive">{% endif %}
+    {% if page in ['obrigado', 'form-error', 'not-found', 'internal-error', 'blog-preview', 'instituto'] %}<meta name="robots" content="noindex, nofollow, noarchive">{% endif %}
     <meta name="theme-color" content="{{ '#002344' if page == 'landing-bpc' else '#11140f' }}">
     <link rel="canonical" href="{{ canonical_url }}">
     <meta property="og:type" content="{{ og_type }}">
@@ -45,13 +45,12 @@
       <nav id="site-nav" class="site-nav" aria-label="Navegação principal" data-site-nav aria-hidden="true" inert>
         <a href="/sobre" {% if page == 'sobre' %}aria-current="page"{% endif %}>Trajetória</a>
         <a href="/atuacao" {% if page == 'atuacao' %}aria-current="page"{% endif %}>Atuação</a>
-        <a href="/instituto" {% if page == 'instituto' %}aria-current="page"{% endif %}>Instituto</a>
         <a href="/blog" {% if page == 'blog' or page == 'blog-post' %}aria-current="page"{% endif %}>Artigos</a>
         <a href="/contato" {% if page == 'contato' %}aria-current="page"{% endif %}>Contato</a>
       </nav>
       <noscript>
         <nav class="noscript-nav" aria-label="Navegação principal sem JavaScript">
-          <a href="/">Início</a> · <a href="/sobre">Trajetória</a> · <a href="/atuacao">Atuação</a> · <a href="/instituto">Instituto</a> · <a href="/blog">Artigos</a> · <a href="/contato">Contato</a>
+          <a href="/">Início</a> · <a href="/sobre">Trajetória</a> · <a href="/atuacao">Atuação</a> · <a href="/blog">Artigos</a> · <a href="/contato">Contato</a>
         </nav>
       </noscript>
     </header>

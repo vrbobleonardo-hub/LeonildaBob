@@ -633,7 +633,7 @@ def robots() -> PlainTextResponse:
 
 @app.get("/sitemap.xml", include_in_schema=False)
 def sitemap() -> Response:
-    paths = ["/", "/bpc-loas-negado", "/sobre", "/atuacao", "/instituto", "/blog", "/contato", "/politica-de-privacidade"]
+    paths = ["/", "/bpc-loas-negado", "/sobre", "/atuacao", "/blog", "/contato", "/politica-de-privacidade"]
     published_posts, _total = db.list_published_blog_posts(limit=1000)
     paths.extend(f"/blog/{post['slug']}" for post in published_posts)
     urls = "".join(f"<url><loc>{settings.app_base_url}{path}</loc></url>" for path in paths)
