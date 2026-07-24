@@ -13,9 +13,9 @@ services:
       - key: APP_ENV
         value: production
       - key: APP_BASE_URL
-        value: https://leonilda-bob.onrender.com
+        value: https://leonildabob.onrender.com
       - key: ALLOWED_HOSTS
-        value: leonilda-bob.onrender.com
+        value: leonildabob.onrender.com
       - key: COOKIE_SECURE
         value: "1"
       - key: DOCS_ENABLED
@@ -29,7 +29,7 @@ services:
       - key: SUPABASE_STORAGE_BUCKET
         value: whatsapp-media
       - key: ADMIN_USERNAME
-        value: bob
+        value: leonilda bob
       - key: ADMIN_PASSWORD_HASH
         sync: false
       - key: ADMIN_SESSION_SECRET
