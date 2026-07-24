@@ -34,7 +34,7 @@
     <label for="{{ form_id }}-area">Área jurídica <span aria-hidden="true">*</span></label>
     <select id="{{ form_id }}-area" name="area" required>
       <option value="">Selecione</option>
-      {% for value, label in [('trabalhista','Trabalhista'),('previdenciario','BPC/LOAS'),('consumidor','Consumidor'),('imobiliario','Imobiliário'),('tributario','Tributário'),('publico','Direito Público'),('outro','Outro assunto')] %}
+      {% for value, label in [('previdenciario','Previdenciário'),('consumidor','Consumidor'),('familia','Família e Sucessões'),('trabalhista','Trabalhista'),('imobiliario','Imobiliário'),('idoso','Direito do Idoso'),('tributario','Tributário'),('publico','Direito Público'),('outro','Outro assunto')] %}
       <option value="{{ value }}" {{ 'selected' if selected_area == value else '' }}>{{ label }}</option>
       {% endfor %}
     </select>

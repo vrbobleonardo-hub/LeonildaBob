@@ -356,6 +356,8 @@ class LeadPayload(BaseModel):
             "tributario",
             "publico",
             "previdenciario",
+            "familia",
+            "idoso",
             "instituto",
             "outro",
         ]
@@ -828,7 +830,7 @@ def atuacao(request: Request) -> HTMLResponse:
             request,
             "atuacao",
             "Atuação jurídica | Bob Advogados",
-            "Atendimento em Direito Trabalhista, Consumidor, Imobiliário, Tributário e Público.",
+            "Atendimento em Direito Previdenciário, Consumidor, Família, Trabalhista, Imobiliário e Direito do Idoso.",
         ),
     )
 

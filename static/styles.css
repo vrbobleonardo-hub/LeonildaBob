@@ -4580,7 +4580,7 @@ caption {
 .practice-overview,
 .contact-paths {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 1px;
   padding: 1px;
   background: var(--line);
@@ -6898,7 +6898,7 @@ li {
 .page-atuacao .practice-overview {
   width: var(--container);
   margin: -1px auto 0;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .page-atuacao .practice-overview a {
