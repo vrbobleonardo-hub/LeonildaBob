@@ -6898,7 +6898,7 @@ li {
 .page-atuacao .practice-overview {
   width: var(--container);
   margin: -1px auto 0;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .page-atuacao .practice-overview a {
