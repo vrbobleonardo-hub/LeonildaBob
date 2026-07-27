@@ -306,7 +306,7 @@ def main() -> None:
             login = client.post(
                 "/admin/login",
                 data={
-                    "username": "admin",
+                    "username": "  ADMIN  ",
                     "password": "smoke-password",
                     "next_path": "/admin",
                     "login_csrf": login_csrf,

@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import secrets
 import time
+import unicodedata
 from dataclasses import dataclass
 from urllib.parse import quote
 
@@ -21,6 +22,12 @@ SESSION_COOKIE = "bob_admin_session"
 @dataclass(frozen=True)
 class AdminUser:
     username: str
+
+
+def normalize_username(value: str) -> str:
+    """Normalize harmless typing differences without changing account identity."""
+    normalized = unicodedata.normalize("NFKC", value or "")
+    return " ".join(normalized.split()).casefold()
 
 
 def auth_is_configured() -> bool:
@@ -60,7 +67,9 @@ def verify_password(password: str) -> bool:
 def authenticate(username: str, password: str) -> AdminUser | None:
     if not auth_is_configured():
         return None
-    if not hmac.compare_digest((username or "").strip(), settings.admin_username):
+    if not hmac.compare_digest(
+        normalize_username(username), normalize_username(settings.admin_username)
+    ):
         return None
     if not verify_password(password):
         return None
