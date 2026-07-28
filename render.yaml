@@ -37,9 +37,15 @@ services:
       - key: METRICS_SALT
         generateValue: true
       - key: WHATSAPP_PROVIDER
-        value: official
+        value: qr
       - key: WHATSAPP_DRY_RUN
-        value: "1"
+        value: "0"
+      - key: WHATSAPP_QR_BRIDGE_URL
+        value: https://leonilda-bob-qr-bridge.onrender.com
+      - key: WHATSAPP_QR_BRIDGE_TOKEN
+        sync: false
+      - key: WHATSAPP_QR_BRIDGE_AUTOSTART
+        value: "0"
       - key: WHATSAPP_ACCESS_TOKEN
         sync: false
       - key: WHATSAPP_PHONE_NUMBER_ID
@@ -52,3 +58,20 @@ services:
         sync: false
       - key: META_GRAPH_VERSION
         sync: false
+
+  - type: web
+    name: leonilda-bob-qr-bridge
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./Dockerfile.whatsapp-qr
+    healthCheckPath: /healthz
+    envVars:
+      - key: WHATSAPP_QR_BRIDGE_HOST
+        value: "0.0.0.0"
+      - key: WHATSAPP_QR_BRIDGE_TOKEN
+        sync: false
+      - key: WHATSAPP_QR_INBOUND_URL
+        value: https://leonildabob.onrender.com/api/webhooks/whatsapp/qr
+      - key: WHATSAPP_QR_AUTH_DIR
+        value: /app/.whatsapp-qr-auth/default
