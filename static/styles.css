@@ -6734,10 +6734,11 @@ li {
 }
 
 .hero-copy {
-  max-width: 610px;
+  max-width: 23ch;
   margin-top: 30px;
-  font-size: 30px;
-  line-height: 1.2;
+  font-size: 28px;
+  line-height: 1.18;
+  text-wrap: balance;
 }
 
 .hero-actions {
@@ -7250,10 +7251,11 @@ li {
   }
 
   .hero-copy {
-    max-width: 34ch;
+    max-width: 32ch;
     margin-top: 22px;
-    font-size: 20px;
-    line-height: 1.35;
+    font-size: 19px;
+    line-height: 1.38;
+    text-wrap: balance;
   }
 
   .hero-actions {
