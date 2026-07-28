@@ -61,6 +61,10 @@ def _unavailable(reason: str = "") -> dict[str, Any]:
     }
 
 
+def _qr_is_enabled() -> bool:
+    return settings.whatsapp_provider == "qr" and not settings.whatsapp_dry_run
+
+
 def _bridge_environment() -> dict[str, str]:
     parsed = urlparse(settings.whatsapp_qr_bridge_url)
     env = os.environ.copy()
@@ -68,6 +72,7 @@ def _bridge_environment() -> dict[str, str]:
     env.setdefault("WHATSAPP_QR_BRIDGE_HOST", "127.0.0.1")
     env.setdefault("WHATSAPP_QR_AUTH_DIR", str(ROOT_DIR / ".whatsapp-qr-auth" / "default"))
     env.setdefault("WHATSAPP_QR_INBOUND_URL", f"{settings.app_base_url.rstrip('/')}/api/webhooks/whatsapp/qr")
+    env["NODE_PATH"] = str(ROOT_DIR / "node_modules")
     if settings.whatsapp_qr_bridge_token:
         env.setdefault("WHATSAPP_QR_BRIDGE_TOKEN", settings.whatsapp_qr_bridge_token)
     return env
@@ -118,10 +123,15 @@ def ensure_qr_bridge_running() -> dict[str, Any]:
 
 
 def qr_session_status(start: bool = False) -> dict[str, Any]:
-    if settings.whatsapp_provider != "qr":
+    if not _qr_is_enabled():
         return {
-            **_unavailable("qr_provider_not_enabled"),
+            **_unavailable(
+                "qr_dry_run_enabled"
+                if settings.whatsapp_provider == "qr"
+                else "qr_provider_not_enabled"
+            ),
             "provider": settings.whatsapp_provider,
+            "dry_run": settings.whatsapp_dry_run,
         }
     if start:
         started = ensure_qr_bridge_running()
@@ -136,7 +146,7 @@ def qr_session_status(start: bool = False) -> dict[str, Any]:
 
 
 def qr_session_action(action: str, *, force: bool = False) -> dict[str, Any]:
-    if settings.whatsapp_provider != "qr":
+    if not _qr_is_enabled():
         return qr_session_status()
     started = ensure_qr_bridge_running()
     if started.get("error"):
