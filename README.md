@@ -117,7 +117,7 @@ npm run whatsapp:qr
 
 A ponte QR deve ser um **segundo Web Service** no Render. A sessão do WhatsApp Web não deve rodar dentro do processo principal do site, pois ela precisa de disco persistente e pode ser reiniciada de forma independente.
 
-1. Crie um novo Web Service a partir do mesmo repositório, usando `Dockerfile.whatsapp-qr`.
+1. Crie um novo Web Service a partir do mesmo repositório, usando runtime **Docker**, `Dockerfile.whatsapp-qr` e health check `/healthz`.
 2. Adicione um Persistent Disk no serviço QR, montado em `/var/data`.
 3. No serviço QR, configure:
 

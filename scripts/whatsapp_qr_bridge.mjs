@@ -252,8 +252,11 @@ function json(res, code, payload) {
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (!clientAllowed(req)) return json(res, 401, { ok: false, error: "unauthorized" });
     const url = new URL(req.url || "/", `http://${HOST}:${PORT}`);
+    if (req.method === "GET" && url.pathname === "/healthz") {
+      return json(res, 200, { ok: true, service: "whatsapp_qr_bridge" });
+    }
+    if (!clientAllowed(req)) return json(res, 401, { ok: false, error: "unauthorized" });
     if (req.method === "GET" && url.pathname === "/status") return json(res, 200, await status());
     if (req.method !== "POST") return json(res, 404, { ok: false, error: "not_found" });
     const body = await readBody(req);
