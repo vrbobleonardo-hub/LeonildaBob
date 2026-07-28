@@ -2142,6 +2142,112 @@ th {
   border: 1px solid var(--line);
 }
 
+.qr-connection-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 28px;
+  align-items: center;
+  margin-top: 18px;
+  padding: clamp(20px, 3vw, 30px);
+  border: 1px solid var(--line);
+  background: #f8f4ec;
+}
+
+.qr-connection-copy h3 {
+  margin-top: 8px;
+  font-size: clamp(30px, 3.4vw, 50px);
+  line-height: 0.98;
+}
+
+.qr-connection-copy > p:not(.eyebrow),
+.qr-connection-note,
+.qr-code-panel p {
+  color: var(--muted);
+}
+
+.qr-connection-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.qr-connection-meta div {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.qr-connection-meta dt {
+  color: var(--bronze-dark);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.qr-connection-meta dd {
+  margin: 5px 0 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.qr-connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.qr-connection-actions button {
+  min-height: 44px;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: #fffaf2;
+  padding: 0 16px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.qr-connection-actions button.is-secondary {
+  background: transparent;
+  color: var(--ink);
+}
+
+.qr-connection-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.qr-connection-note {
+  min-height: 1.4em;
+  margin: 16px 0 0;
+  font-size: 13px;
+}
+
+.qr-code-panel {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  text-align: center;
+}
+
+.qr-code-panel img {
+  display: block;
+  width: min(100%, 280px);
+  height: auto;
+}
+
+.qr-code-panel p {
+  max-width: 30ch;
+  margin: 0;
+  font-size: 13px;
+}
+
 .admin-empty {
   padding: 18px;
   color: var(--muted);
@@ -2735,6 +2841,10 @@ th {
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .qr-connection-card {
+    grid-template-columns: 1fr;
+  }
+
   .admin-chat {
     grid-template-columns: 1fr;
   }
@@ -2868,6 +2978,10 @@ th {
 
   .attendance-summary {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .qr-connection-meta {
+    grid-template-columns: 1fr;
   }
 
   .admin-chat-modern .chat-contact {

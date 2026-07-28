@@ -46,6 +46,7 @@ from .whatsapp import (
     send_whatsapp_media,
     send_whatsapp_text,
 )
+from .whatsapp_qr import qr_session_action, qr_session_status
 
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -475,6 +476,29 @@ class LeadStatusPayload(BaseModel):
 class PrivacyDeletePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     phone: str = Field(min_length=8, max_length=32)
+
+
+class QrSessionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["connect", "disconnect", "reset", "refresh"] = "refresh"
+    force: bool = False
+
+
+class QrInboundPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    phone: str = Field(min_length=8, max_length=32)
+    text: str = Field(min_length=1, max_length=4096)
+    name: Optional[str] = Field(default=None, max_length=120)
+    provider_message_id: Optional[str] = Field(default=None, max_length=240)
+    message_type: Literal["text", "image", "video", "audio", "document", "interactive"] = "text"
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("text", "name", "provider_message_id", mode="before")
+    @classmethod
+    def strip_qr_text(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        return str(value).strip()
 
 
 def delete_private_media(media_urls: list[str]) -> bool:
@@ -1621,8 +1645,30 @@ def admin_whatsapp_status(request: Request) -> JSONResponse:
             "verify_token_set": bool(settings.whatsapp_verify_token),
             "template_set": bool(settings.whatsapp_first_contact_template),
             "webhook_url": f"{settings.app_base_url.rstrip('/')}/api/webhooks/whatsapp",
+            "qr": qr_session_status(start=False),
         }
     )
+
+
+@app.get("/api/admin/whatsapp/qr/session")
+def admin_qr_session_status(request: Request) -> JSONResponse:
+    require_admin(request)
+    return JSONResponse({"ok": True, **qr_session_status(start=False)})
+
+
+@app.post("/api/admin/whatsapp/qr/session")
+def admin_qr_session_action(
+    payload: QrSessionPayload,
+    request: Request,
+    _admin: Any = Depends(require_admin),
+) -> JSONResponse:
+    verify_same_origin(request)
+    verify_session_csrf(request)
+    try:
+        result = qr_session_action(payload.action, force=payload.force)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse({"ok": True, **result})
 
 
 @app.post("/api/admin/outbox/{outbox_id}/retry")
@@ -1780,6 +1826,61 @@ def process_whatsapp_payload(payload: dict[str, Any]) -> None:
                             status="failed",
                             raw_payload={"error": str(exc)},
                         )
+
+
+def verify_qr_bridge_request(request: Request) -> None:
+    expected_token = settings.whatsapp_qr_bridge_token
+    received_token = request.headers.get("x-qr-bridge-token", "")
+    if expected_token:
+        if not secrets.compare_digest(received_token, expected_token):
+            raise HTTPException(status_code=403, detail="Bridge QR não autorizado.")
+        return
+    if settings.is_production:
+        raise HTTPException(status_code=503, detail="Token do bridge QR não configurado.")
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1", "testclient"}:
+        raise HTTPException(status_code=403, detail="Bridge QR não autorizado.")
+
+
+@app.post("/api/webhooks/whatsapp/qr")
+def receive_qr_inbound(payload: QrInboundPayload, request: Request) -> JSONResponse:
+    rate_limit(request, "whatsapp-qr-inbound", limit=300, window_seconds=60)
+    verify_qr_bridge_request(request)
+    if settings.whatsapp_provider != "qr":
+        raise HTTPException(status_code=409, detail="O provedor QR não está ativo.")
+    if payload.provider_message_id and db.whatsapp_message_exists(payload.provider_message_id):
+        return JSONResponse({"ok": True, "duplicate": True})
+    try:
+        phone = normalize_phone(payload.phone)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    conversation_id = db.get_or_create_conversation(phone, name=payload.name or "")
+    db.record_whatsapp_message(
+        conversation_id,
+        direction="in",
+        text=payload.text,
+        message_type=payload.message_type,
+        provider_message_id=payload.provider_message_id,
+        status="received",
+        raw_payload={"source": "whatsapp_qr_bridge", **payload.raw},
+    )
+    if (
+        settings.whatsapp_auto_reply
+        and db.can_auto_reply(conversation_id, settings.whatsapp_auto_reply_cooldown_seconds)
+    ):
+        reply = auto_reply_for_inbound(payload.text)
+        try:
+            send_whatsapp_text(phone, reply, conversation_id=conversation_id)
+            db.mark_auto_reply(conversation_id)
+        except Exception as exc:  # pragma: no cover - integration/runtime path
+            db.record_whatsapp_message(
+                conversation_id,
+                direction="out",
+                text=reply,
+                status="failed",
+                raw_payload={"error": str(exc)},
+            )
+    return JSONResponse({"ok": True, "conversation_id": conversation_id})
 
 
 @app.post("/api/webhooks/whatsapp")

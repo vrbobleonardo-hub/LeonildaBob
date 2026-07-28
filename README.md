@@ -85,26 +85,60 @@ https://seu-dominio.com/api/webhooks/whatsapp
 
 Observação: quando o contato é iniciado pelo escritório, o WhatsApp oficial normalmente exige um modelo aprovado. Por isso existe `WHATSAPP_FIRST_CONTACT_TEMPLATE`.
 
-### QR como alternativa
+### Conexão por QR do WhatsApp Web
 
-Se quiser usar o QR bridge:
+O painel `/admin` também pode operar por uma sessão do WhatsApp Web. Ele exibe um QR para leitura no telefone, recebe mensagens no inbox e envia respostas de texto pela sessão conectada.
+
+Essa modalidade depende de uma sessão do WhatsApp Web e pode estar sujeita às regras e limitações da plataforma. Para uso institucional de longo prazo, a API oficial continua sendo a opção recomendada.
+
+Para testar localmente:
+
+```bash
+npm install
+```
+
+Configure no `.env`:
 
 ```env
 WHATSAPP_PROVIDER="qr"
-WHATSAPP_QR_BRIDGE_URL="http://127.0.0.1:3333"
 WHATSAPP_DRY_RUN="0"
+WHATSAPP_QR_BRIDGE_URL="http://127.0.0.1:3333"
+WHATSAPP_QR_BRIDGE_TOKEN="uma-chave-longa-e-exclusiva"
+WHATSAPP_QR_BRIDGE_AUTOSTART="1"
 ```
 
-Payload esperado pelo bridge:
+Depois inicie o site com `npm run dev`, entre em `/admin` e use **Gerar QR** no painel **Canais do WhatsApp**. O bridge local inicia automaticamente. Também é possível executá-lo manualmente com:
 
-```json
-{
-  "to": "5511994926810",
-  "text": "mensagem"
-}
+```bash
+npm run whatsapp:qr
 ```
 
-O bridge QR é aceito somente para texto. Arquivos exigem a integração oficial para evitar simulações de envio.
+#### Produção no Render
+
+A ponte QR deve ser um **segundo Web Service** no Render. A sessão do WhatsApp Web não deve rodar dentro do processo principal do site, pois ela precisa de disco persistente e pode ser reiniciada de forma independente.
+
+1. Crie um novo Web Service a partir do mesmo repositório, usando `Dockerfile.whatsapp-qr`.
+2. Adicione um Persistent Disk no serviço QR, montado em `/var/data`.
+3. No serviço QR, configure:
+
+```env
+WHATSAPP_QR_BRIDGE_HOST="0.0.0.0"
+WHATSAPP_QR_BRIDGE_TOKEN="a-mesma-chave-longa"
+WHATSAPP_QR_AUTH_DIR="/var/data/whatsapp"
+WHATSAPP_QR_INBOUND_URL="https://bobadvogados.com.br/api/webhooks/whatsapp/qr"
+```
+
+4. No Web Service principal do site, configure:
+
+```env
+WHATSAPP_PROVIDER="qr"
+WHATSAPP_DRY_RUN="0"
+WHATSAPP_QR_BRIDGE_URL="https://SEU-SERVICO-QR.onrender.com"
+WHATSAPP_QR_BRIDGE_TOKEN="a-mesma-chave-longa"
+WHATSAPP_QR_BRIDGE_AUTOSTART="0"
+```
+
+Use uma chave diferente para cada ambiente e mantenha-a apenas nas variáveis do Render. Sem o Persistent Disk, será necessário ler um novo QR após uma reinicialização do serviço QR. O bridge QR opera somente com mensagens de texto; arquivos continuam exigindo a API oficial.
 
 ## Testes
 

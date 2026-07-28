@@ -1,6 +1,7 @@
 .env
 .codex/
 .venv/
+node_modules/
 design-source/
 data/*.sqlite
 data/*.sqlite-*
@@ -14,4 +15,6 @@ static/uploads/whatsapp/*
 !static/uploads/whatsapp/.gitkeep
 __pycache__/
 .playwright-cli/
+.whatsapp-qr-auth/
+data/whatsapp_qr_bridge.log
 .DS_Store

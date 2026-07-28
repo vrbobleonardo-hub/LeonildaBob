@@ -11,6 +11,7 @@ import requests
 
 from . import db
 from .settings import BRAZILIAN_AREA_CODES, settings
+from .whatsapp_qr import send_via_qr_bridge as send_via_qr_connector
 
 
 LeadKind = Literal["trabalhista", "instituto", "bpc", "geral"]
@@ -105,18 +106,8 @@ def first_contact_message(kind: LeadKind, name: str, message: str | None = None)
     )
 
 
-def send_via_qr_bridge(to: str, text: str) -> None:
-    if settings.whatsapp_dry_run:
-        return
-    if not settings.whatsapp_qr_bridge_url:
-        raise RuntimeError("WHATSAPP_QR_BRIDGE_URL não configurado.")
-    response = HTTP.post(
-        f"{settings.whatsapp_qr_bridge_url}/send",
-        json={"to": to, "text": text},
-        timeout=8,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError(f"QR bridge retornou {response.status_code}: {response.text[:240]}")
+def send_via_qr_bridge(to: str, text: str) -> dict[str, Any]:
+    return send_via_qr_connector(to, text)
 
 
 def send_via_official_api(to: str, text: str) -> dict[str, Any]:
@@ -280,7 +271,8 @@ def send_whatsapp_text(
     raw: dict[str, Any] = {}
     if not settings.whatsapp_dry_run:
         if settings.whatsapp_provider == "qr":
-            send_via_qr_bridge(to, text)
+            raw = send_via_qr_bridge(to, text)
+            provider_message_id = str(raw.get("provider_message_id") or "") or None
             status = "sent"
         else:
             raw = (

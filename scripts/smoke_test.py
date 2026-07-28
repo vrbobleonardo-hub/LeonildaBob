@@ -29,6 +29,7 @@ os.environ.update(
         "REQUIRE_VIRUS_SCAN": "0",
         "METRICS_SALT": "smoke-metrics-salt",
         "WHATSAPP_DRY_RUN": "1",
+        "WHATSAPP_QR_BRIDGE_TOKEN": "smoke-qr-bridge-token",
         "WHATSAPP_APP_SECRET": "smoke-app-secret",
         "WHATSAPP_VERIFY_TOKEN": "smoke-verify-token",
         "ADMIN_USERNAME": "admin",
@@ -321,6 +322,20 @@ def main() -> None:
             expect(admin_response.status_code == 200, admin_response.text)
             csrf = meta_value(admin_response.text, "csrf-token")
             admin_headers = {"X-CSRF-Token": csrf}
+            qr_status = client.get("/api/admin/whatsapp/qr/session")
+            expect(qr_status.status_code == 200, qr_status.text)
+            expect(qr_status.json().get("enabled") is False, "QR habilitado sem provedor QR")
+            qr_inbound_unauthorized = client.post(
+                "/api/webhooks/whatsapp/qr",
+                json={"phone": "5511994926810", "text": "Teste QR"},
+            )
+            expect(qr_inbound_unauthorized.status_code == 403, "Webhook QR sem token aceito")
+            qr_inbound_disabled = client.post(
+                "/api/webhooks/whatsapp/qr",
+                headers={"X-QR-Bridge-Token": "smoke-qr-bridge-token"},
+                json={"phone": "5511994926810", "text": "Teste QR"},
+            )
+            expect(qr_inbound_disabled.status_code == 409, "Webhook QR aceito sem provedor QR")
 
             empty_blog_admin = client.get("/admin/artigos")
             expect(empty_blog_admin.status_code == 200, empty_blog_admin.text)

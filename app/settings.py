@@ -129,6 +129,8 @@ class Settings:
         self.whatsapp_qr_bridge_url = os.getenv(
             "WHATSAPP_QR_BRIDGE_URL", "http://127.0.0.1:3333"
         ).rstrip("/")
+        self.whatsapp_qr_bridge_token = os.getenv("WHATSAPP_QR_BRIDGE_TOKEN", "").strip()
+        self.whatsapp_qr_bridge_autostart = env_bool("WHATSAPP_QR_BRIDGE_AUTOSTART", True)
         self.whatsapp_dry_run = env_bool("WHATSAPP_DRY_RUN", True)
 
         self.metrics_salt = os.getenv("METRICS_SALT", "local-development-salt")
@@ -176,6 +178,8 @@ class Settings:
             qr_bridge.scheme not in {"http", "https"} or not qr_bridge.netloc
         ):
             raise RuntimeError("WHATSAPP_QR_BRIDGE_URL deve ser uma URL HTTP absoluta.")
+        if self.whatsapp_provider == "qr" and self.is_production and not self.whatsapp_qr_bridge_token:
+            raise RuntimeError("WHATSAPP_QR_BRIDGE_TOKEN deve ser configurado em produção com QR.")
         if self.database_url and not self.database_url.startswith(("postgresql://", "postgres://")):
             raise RuntimeError("DATABASE_URL deve apontar para PostgreSQL.")
         if self.db_pool_min_size > self.db_pool_max_size:

@@ -555,6 +555,75 @@ function initAdminChat() {
     return response;
   }
 
+  const qrPanel = app.querySelector("[data-whatsapp-qr]");
+  const qrStatus = app.querySelector("[data-qr-status]");
+  const qrNumber = app.querySelector("[data-qr-number]");
+  const qrConnected = app.querySelector("[data-qr-connected]");
+  const qrDescription = app.querySelector("[data-qr-description]");
+  const qrNote = app.querySelector("[data-qr-note]");
+  const qrCodePanel = app.querySelector("[data-qr-code-panel]");
+  const qrImage = app.querySelector("[data-qr-image]");
+
+  function qrStatusLabel(session, enabled) {
+    if (!enabled) return "Ative o provedor QR";
+    const labels = {
+      connected: "Conectado",
+      connecting: "Conectando",
+      qr: "Aguardando leitura do QR",
+      disconnected: "Desconectado",
+      failed: "Falha de conexão",
+      unavailable: "Bridge indisponível",
+    };
+    return labels[session?.status] || "Aguardando conexão";
+  }
+
+  function renderQrSession(payload) {
+    if (!qrPanel) return;
+    const session = payload?.session || {};
+    const enabled = payload?.enabled === true;
+    const isConnected = session.status === "connected" && session.can_send;
+    qrStatus.textContent = qrStatusLabel(session, enabled);
+    qrNumber.textContent = session.phone_wa_id || "—";
+    qrConnected.textContent = session.last_connected_at ? localDate(session.last_connected_at) : "—";
+    qrDescription.textContent = enabled
+      ? (isConnected ? "A sessão está pronta para enviar e receber mensagens neste inbox." : "Gere o QR e leia-o pelo WhatsApp do telefone que será usado no atendimento.")
+      : "Para usar este canal, configure WHATSAPP_PROVIDER=qr, WHATSAPP_DRY_RUN=0 e reinicie o serviço.";
+    qrCodePanel.hidden = !session.qr_data_url;
+    if (session.qr_data_url) qrImage.src = session.qr_data_url;
+    if (!session.qr_data_url) qrImage.removeAttribute("src");
+    app.querySelector("[data-qr-connect]").disabled = !enabled || isConnected;
+    app.querySelector("[data-qr-reset]").disabled = !enabled;
+    if (session.last_error) qrNote.textContent = `Conexão: ${session.last_error}`;
+    else if (session.qr_expires_at) qrNote.textContent = `O código expira em ${localDate(session.qr_expires_at)}.`;
+    else qrNote.textContent = "";
+  }
+
+  async function refreshQrSession(action = "refresh") {
+    if (!qrPanel) return;
+    const method = action === "refresh" ? "GET" : "POST";
+    const options = method === "GET" ? {} : {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    };
+    try {
+      const response = await adminFetch("/api/admin/whatsapp/qr/session", options);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(formatApiError(payload));
+      renderQrSession(payload);
+    } catch (error) {
+      qrNote.textContent = error.message || "Não foi possível consultar a conexão QR.";
+    }
+  }
+
+  qrPanel?.querySelector("[data-qr-connect]")?.addEventListener("click", () => refreshQrSession("connect"));
+  qrPanel?.querySelector("[data-qr-refresh]")?.addEventListener("click", () => refreshQrSession());
+  qrPanel?.querySelector("[data-qr-reset]")?.addEventListener("click", () => refreshQrSession("disconnect"));
+  refreshQrSession();
+  window.setInterval(() => {
+    if (!document.hidden) refreshQrSession();
+  }, 3_000);
+
   function conversationButton(item) {
     const name = item.name || item.phone || "Contato";
     const initial = escapeHtml(String(name).trim().slice(0, 1) || "?");

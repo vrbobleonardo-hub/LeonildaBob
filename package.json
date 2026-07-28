@@ -1,5 +1,11 @@
 {
   "scripts": {
-    "dev": "DATABASE_URL= SUPABASE_URL= SUPABASE_SECRET_KEY= APP_BASE_URL=http://127.0.0.1:4000 .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 4000"
+    "dev": "DATABASE_URL= SUPABASE_URL= SUPABASE_SECRET_KEY= APP_BASE_URL=http://127.0.0.1:4000 .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 4000",
+    "whatsapp:qr": "node scripts/whatsapp_qr_bridge.mjs"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.21",
+    "pino": "^9.14.0",
+    "qrcode": "^1.5.4"
   }
 }
