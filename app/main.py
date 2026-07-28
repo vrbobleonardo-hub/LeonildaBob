@@ -166,7 +166,16 @@ class RequestBodyLimitMiddleware:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    db.init_db()
+    for _attempt in range(5):
+        try:
+            db.init_db()
+            break
+        except Exception as exc:
+            if "deadlock" in str(exc).lower() and _attempt < 4:
+                import time
+                time.sleep(2)
+                continue
+            raise
     try:
         application.state.storage_ready = storage.ensure_bucket()
     except RuntimeError:
