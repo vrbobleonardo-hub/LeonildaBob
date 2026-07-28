@@ -1434,8 +1434,8 @@ def admin_snapshot(limit: int = 50) -> dict[str, Any]:
             SELECT
                 SUM(CASE WHEN path = '/' THEN 1 ELSE 0 END) AS institutional_visits,
                 SUM(CASE WHEN path = '/bpc-loas-negado' THEN 1 ELSE 0 END) AS bpc_visits,
-                SUM(CASE WHEN path = '/conversion/lead' OR path LIKE '/conversion/lead/%' THEN 1 ELSE 0 END) AS lead_conversions,
-                SUM(CASE WHEN path = '/conversion/whatsapp' OR path LIKE '/conversion/whatsapp/%' THEN 1 ELSE 0 END) AS whatsapp_clicks
+                SUM(CASE WHEN path = '/conversion/lead' OR substr(path, 1, 17) = '/conversion/lead/' THEN 1 ELSE 0 END) AS lead_conversions,
+                SUM(CASE WHEN path = '/conversion/whatsapp' OR substr(path, 1, 21) = '/conversion/whatsapp/' THEN 1 ELSE 0 END) AS whatsapp_clicks
             FROM page_views
             """
         ).fetchone()
