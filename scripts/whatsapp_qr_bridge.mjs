@@ -605,7 +605,23 @@ async function startSession(options = {}) {
     runtime.socket = socket;
     runtime.downloadMediaMessage = downloadMediaMessage;
     runtime.baileysLogger = logger;
-    socket.ev.on("creds.update", saveCreds);
+    let backupTimeout = null;
+    socket.ev.on("creds.update", async (newCreds) => {
+      await saveCreds(newCreds);
+      if (backupTimeout) clearTimeout(backupTimeout);
+      backupTimeout = setTimeout(async () => {
+        try {
+          const backupUrl = `${INBOUND_URL.replace(/\/api\/webhooks\/whatsapp\/qr$/, "")}/api/webhooks/whatsapp/qr/auth-backup`;
+          const headers = { "Content-Type": "application/json" };
+          if (BRIDGE_TOKEN) headers["X-QR-Bridge-Token"] = BRIDGE_TOKEN;
+          const resp = await fetch(backupUrl, { method: "POST", headers, body: "{}" });
+          const data = await resp.json().catch(() => ({}));
+          logEvent("auth_backup_sync", { ok: data.ok, saved: data.saved });
+        } catch (err) {
+          logEvent("auth_backup_sync_error", { error: cleanText(err?.message) });
+        }
+      }, 5000);
+    });
     socket.ev.on("messages.upsert", async (event) => {
       const rows = Array.isArray(event?.messages) ? event.messages : [];
       if (rows.length) {
@@ -672,19 +688,6 @@ async function startSession(options = {}) {
           lastError: null,
           reconnectAttempts: 0,
         });
-        // Backup auth to database so it survives redeploys
-        setTimeout(async () => {
-          try {
-            const backupUrl = `${INBOUND_URL.replace(/\/api\/webhooks\/whatsapp\/qr$/, "")}/api/webhooks/whatsapp/qr/auth-backup`;
-            const headers = { "Content-Type": "application/json" };
-            if (BRIDGE_TOKEN) headers["X-QR-Bridge-Token"] = BRIDGE_TOKEN;
-            const resp = await fetch(backupUrl, { method: "POST", headers, body: "{}" });
-            const data = await resp.json().catch(() => ({}));
-            logEvent("auth_backup", { ok: data.ok, saved: data.saved });
-          } catch (err) {
-            logEvent("auth_backup_error", { error: cleanText(err?.message) });
-          }
-        }, 3000);
       }
 
       if (update?.connection === "close") {
