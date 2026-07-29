@@ -71,7 +71,8 @@ def _bridge_environment() -> dict[str, str]:
     env.setdefault("WHATSAPP_QR_BRIDGE_PORT", str(parsed.port or 3333))
     env.setdefault("WHATSAPP_QR_BRIDGE_HOST", "127.0.0.1")
     env.setdefault("WHATSAPP_QR_AUTH_DIR", str(ROOT_DIR / ".whatsapp-qr-auth" / "default"))
-    env.setdefault("WHATSAPP_QR_INBOUND_URL", f"{settings.app_base_url.rstrip('/')}/api/webhooks/whatsapp/qr")
+    port = os.getenv("PORT", "8000")
+    env.setdefault("WHATSAPP_QR_INBOUND_URL", f"http://127.0.0.1:{port}/api/webhooks/whatsapp/qr")
     env["NODE_PATH"] = str(ROOT_DIR / "node_modules")
     if settings.whatsapp_qr_bridge_token:
         env.setdefault("WHATSAPP_QR_BRIDGE_TOKEN", settings.whatsapp_qr_bridge_token)

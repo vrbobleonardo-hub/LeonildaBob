@@ -58,6 +58,10 @@ def normalize_phone(raw: str) -> str:
     subscriber = national[2:]
     if area_code not in BRAZILIAN_AREA_CODES or len(set(subscriber)) == 1:
         raise ValueError("Telefone inválido. Confira o DDD e o número.")
+    if len(national) == 10 and subscriber.startswith("9"):
+        digits = f"55{national[:2]}9{subscriber}"
+        national = digits[2:]
+        subscriber = national[2:]
     if len(national) == 11 and not subscriber.startswith("9"):
         raise ValueError("Celular inválido. O número deve começar com 9.")
     if len(national) == 10 and subscriber[0] not in {"2", "3", "4", "5"}:

@@ -40,8 +40,13 @@ function text(value) {
 }
 
 function normalizePhone(value) {
-  const digits = text(value).replace(/\D/g, "");
-  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  let digits = text(value).replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("0")) digits = digits.slice(1);
+  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
+  if (digits.startsWith("55") && digits.length === 12 && digits[4] === "9") {
+    digits = `55${digits.slice(2, 4)}9${digits.slice(4)}`;
+  }
   return digits;
 }
 
@@ -81,38 +86,70 @@ async function importWhatsApp() {
 }
 
 function messageText(message) {
-  const payload = message?.message?.ephemeralMessage?.message || message?.message || {};
+  const payload = message?.message?.ephemeralMessage?.message || message?.message?.viewOnceMessage?.message || message?.message || {};
   if (payload.conversation) return text(payload.conversation);
   if (payload.extendedTextMessage?.text) return text(payload.extendedTextMessage.text);
   if (payload.imageMessage) return text(payload.imageMessage.caption) || "[Imagem]";
   if (payload.videoMessage) return text(payload.videoMessage.caption) || "[Vídeo]";
   if (payload.audioMessage) return "[Áudio]";
   if (payload.documentMessage) return text(payload.documentMessage.fileName) || "[Documento]";
-  return "";
+  if (payload.stickerMessage) return "[Figurinha]";
+  if (payload.contactMessage || payload.contactsArrayMessage) return "[Contato]";
+  if (payload.locationMessage || payload.liveLocationMessage) return "[Localização]";
+  if (payload.buttonsResponseMessage) return text(payload.buttonsResponseMessage.selectedButtonId);
+  if (payload.templateButtonReplyMessage) return text(payload.templateButtonReplyMessage.selectedId);
+  if (payload.interactiveResponseMessage) return text(payload.interactiveResponseMessage.nativeFlowResponseMessage?.paramsJson || "[Resposta Interativa]");
+  return "[Mensagem]";
 }
 
 async function postInbound(message) {
   if (message?.key?.fromMe || !INBOUND_URL) return;
-  const jid = text(message?.key?.remoteJid);
-  if (!jid || jid.endsWith("@g.us") || jid === "status@broadcast") return;
-  const phone = normalizePhone(jid.split("@")[0].split(":")[0]);
+  const remoteJid = text(message?.key?.remoteJid);
+  const participant = text(message?.key?.participant || message?.participant);
+  if (!remoteJid || remoteJid.endsWith("@g.us") || remoteJid === "status@broadcast") return;
+
+  let rawPhone = remoteJid.split("@")[0].split(":")[0];
+  let phone = normalizePhone(rawPhone);
+  if (!/^55\d{10,11}$/.test(phone) && participant) {
+    rawPhone = participant.split("@")[0].split(":")[0];
+    phone = normalizePhone(rawPhone);
+  }
+
   const body = messageText(message);
-  if (!/^55\d{10,11}$/.test(phone) || !body) return;
-  const response = await fetch(INBOUND_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(BRIDGE_TOKEN ? { "X-QR-Bridge-Token": BRIDGE_TOKEN } : {}),
-    },
-    body: JSON.stringify({
-      phone,
-      name: text(message?.pushName) || null,
-      text: body,
-      provider_message_id: text(message?.key?.id) || null,
-      message_type: "text",
-      raw: { source: "whatsapp_qr_bridge", remote_jid: jid },
-    }),
-  });
+  if (!/^55\d{10,11}$/.test(phone)) return;
+
+  const payload = {
+    phone,
+    name: text(message?.pushName) || null,
+    text: body,
+    provider_message_id: text(message?.key?.id) || null,
+    message_type: "text",
+    raw: { source: "whatsapp_qr_bridge", remote_jid: remoteJid, participant },
+  };
+
+  let response;
+  try {
+    response = await fetch(INBOUND_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(BRIDGE_TOKEN ? { "X-QR-Bridge-Token": BRIDGE_TOKEN } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    const port = process.env.PORT || 8000;
+    const fallbackUrl = `http://127.0.0.1:${port}/api/webhooks/whatsapp/qr`;
+    response = await fetch(fallbackUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(BRIDGE_TOKEN ? { "X-QR-Bridge-Token": BRIDGE_TOKEN } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+  }
+
   if (!response.ok) throw new Error(`inbound_${response.status}`);
   patch({ lastInboundAt: now() });
 }
