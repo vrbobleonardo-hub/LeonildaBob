@@ -95,11 +95,11 @@ class Settings:
         self.template_dir = PROJECT_ROOT / "templates"
         self.static_dir = PROJECT_ROOT / "static"
 
-        self.allowed_hosts = [
+        self.allowed_hosts = list({
             host.strip()
-            for host in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost,testserver").split(",")
+            for host in (os.getenv("ALLOWED_HOSTS", "") + ",127.0.0.1,localhost,testserver").split(",")
             if host.strip()
-        ]
+        })
         self.cookie_secure = env_bool(
             "COOKIE_SECURE",
             self.app_env == "production" or self.app_base_url.startswith("https://"),
