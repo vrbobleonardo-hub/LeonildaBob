@@ -74,6 +74,7 @@ async function importWhatsApp() {
     makeWASocket: baileys.default || baileys.makeWASocket,
     useMultiFileAuthState: baileys.useMultiFileAuthState,
     fetchLatestBaileysVersion: baileys.fetchLatestBaileysVersion,
+    Browsers: baileys.Browsers || null,
     DisconnectReason: baileys.DisconnectReason || {},
     logger: loggerFactory({ level: "silent" }),
   };
@@ -144,19 +145,23 @@ async function startSession({ force = false } = {}) {
   if (runtime.starting) return runtime.starting;
   if (!force && runtime.socket && runtime.status === "connected") return;
   runtime.starting = (async () => {
+    if (force) {
+      await fs.rm(AUTH_DIR, { recursive: true, force: true });
+    }
     await fs.mkdir(AUTH_DIR, { recursive: true });
-    const { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason, logger } = await importWhatsApp();
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+    const { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, Browsers, DisconnectReason, logger } = await importWhatsApp();
     const latest = await fetchLatestBaileysVersion().catch(() => ({}));
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     await stopSocket(false);
     patch({ status: "connecting", lastError: null });
+    const browserConfig = Browsers?.macOS?.("Desktop") || Browsers?.ubuntu?.("Chrome") || ["Mac OS", "Desktop", "14.4.1"];
     const socket = makeWASocket({
       auth: state,
-      browser: ["Ubuntu", "Chrome", "20.0.04"],
+      browser: browserConfig,
       logger,
+      version: latest.version,
       markOnlineOnConnect: false,
       printQRInTerminal: false,
-      version: latest.version,
     });
     runtime.socket = socket;
     socket.ev.on("creds.update", saveCreds);
