@@ -1858,6 +1858,16 @@ def verify_qr_bridge_request(request: Request) -> None:
     if client_host not in {"127.0.0.1", "::1", "testclient"}:
         raise HTTPException(status_code=403, detail="Bridge QR não autorizado.")
 
+@app.post("/api/webhooks/whatsapp/qr/auth-backup")
+def backup_qr_auth(request: Request) -> JSONResponse:
+    verify_qr_bridge_request(request)
+    auth_dir = str(Path(__file__).resolve().parents[1] / ".whatsapp-qr-auth" / "default")
+    try:
+        saved = db.save_qr_auth_files(auth_dir)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+    return JSONResponse({"ok": True, "saved": saved})
+
 
 @app.post("/api/webhooks/whatsapp/qr")
 def receive_qr_inbound(payload: QrInboundPayload, request: Request) -> JSONResponse:

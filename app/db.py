@@ -187,6 +187,12 @@ CREATE INDEX IF NOT EXISTS idx_webhook_events_pending ON whatsapp_webhook_events
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_expiry ON admin_sessions(expires_at, revoked_at);
 CREATE INDEX IF NOT EXISTS idx_blog_posts_public ON blog_posts(status, published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_blog_posts_category ON blog_posts(category);
+
+CREATE TABLE IF NOT EXISTS whatsapp_qr_auth_store (
+    file_key TEXT PRIMARY KEY,
+    file_data TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -1864,3 +1870,51 @@ def unpublish_blog_post(post_id: int) -> bool:
             (utc_now(), post_id),
         )
         return cursor.rowcount > 0
+
+
+def save_qr_auth_files(auth_dir: str) -> int:
+    """Save all files in auth_dir to the database."""
+    import os
+    saved = 0
+    now = utc_now()
+    for filename in os.listdir(auth_dir):
+        filepath = os.path.join(auth_dir, filename)
+        if not os.path.isfile(filepath):
+            continue
+        try:
+            with open(filepath, "r") as f:
+                data = f.read()
+        except Exception:
+            continue
+        with get_conn() as conn:
+            conn.execute(
+                """INSERT INTO whatsapp_qr_auth_store (file_key, file_data, updated_at)
+                   VALUES (%s, %s, %s)
+                   ON CONFLICT (file_key)
+                   DO UPDATE SET file_data = EXCLUDED.file_data, updated_at = EXCLUDED.updated_at""",
+                (filename, data, now),
+            )
+        saved += 1
+    return saved
+
+
+def restore_qr_auth_files(auth_dir: str) -> int:
+    """Restore auth files from the database to auth_dir."""
+    import os
+    os.makedirs(auth_dir, exist_ok=True)
+    restored = 0
+    with get_conn() as conn:
+        cursor = conn.execute("SELECT file_key, file_data FROM whatsapp_qr_auth_store")
+        rows = cursor.fetchall()
+    for row in rows:
+        key = row["file_key"] if isinstance(row, dict) else row[0]
+        data = row["file_data"] if isinstance(row, dict) else row[1]
+        filepath = os.path.join(auth_dir, key)
+        try:
+            with open(filepath, "w") as f:
+                f.write(data)
+            restored += 1
+        except Exception:
+            continue
+    return restored
+

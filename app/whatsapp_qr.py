@@ -108,6 +108,17 @@ def ensure_qr_bridge_running() -> dict[str, Any]:
     if not script.exists():
         return {"ok": False, "error": "qr_bridge_script_missing"}
 
+    # Restore auth from database before starting bridge
+    auth_dir = str(ROOT_DIR / ".whatsapp-qr-auth" / "default")
+    try:
+        from . import db
+        restored = db.restore_qr_auth_files(auth_dir)
+        if restored:
+            import logging
+            logging.getLogger(__name__).info(f"[QR] Restored {restored} auth files from database")
+    except Exception:
+        pass
+
     data_dir = ROOT_DIR / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     log_file = (data_dir / "whatsapp_qr_bridge.log").open("ab")

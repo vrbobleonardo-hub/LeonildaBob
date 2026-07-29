@@ -672,6 +672,19 @@ async function startSession(options = {}) {
           lastError: null,
           reconnectAttempts: 0,
         });
+        // Backup auth to database so it survives redeploys
+        setTimeout(async () => {
+          try {
+            const backupUrl = `${INBOUND_URL.replace(/\/api\/webhooks\/whatsapp\/qr$/, "")}/api/webhooks/whatsapp/qr/auth-backup`;
+            const headers = { "Content-Type": "application/json" };
+            if (BRIDGE_TOKEN) headers["X-QR-Bridge-Token"] = BRIDGE_TOKEN;
+            const resp = await fetch(backupUrl, { method: "POST", headers, body: "{}" });
+            const data = await resp.json().catch(() => ({}));
+            logEvent("auth_backup", { ok: data.ok, saved: data.saved });
+          } catch (err) {
+            logEvent("auth_backup_error", { error: cleanText(err?.message) });
+          }
+        }, 3000);
       }
 
       if (update?.connection === "close") {
