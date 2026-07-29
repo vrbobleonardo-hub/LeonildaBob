@@ -671,26 +671,35 @@ function initAdminChat() {
     `;
   }
 
-  async function loadConversationList({ reset = false } = {}) {
+  async function loadConversationList({ reset = false, quiet = false } = {}) {
     const sequence = ++listRequestSequence;
-    if (reset) {
+    if (reset && !quiet) {
       offset = 0;
       list.innerHTML = "";
     }
+    const targetOffset = (reset || quiet) ? 0 : offset;
     const query = encodeURIComponent(search?.value.trim() || "");
-    if (more) more.disabled = true;
+    if (more && !quiet) more.disabled = true;
     try {
-      const response = await adminFetch(`/api/admin/conversations?limit=50&offset=${offset}&q=${query}`);
+      const response = await adminFetch(`/api/admin/conversations?limit=50&offset=${targetOffset}&q=${query}`);
       const result = await response.json();
       if (sequence !== listRequestSequence) return;
       if (!response.ok) throw new Error(formatApiError(result));
-      list.insertAdjacentHTML("beforeend", result.conversations.map(conversationButton).join(""));
-      if (reset && !result.conversations.length) {
-        list.innerHTML = '<div class="admin-empty">Nenhuma conversa encontrada.</div>';
+      const html = result.conversations.map(conversationButton).join("");
+      if (quiet || (reset && targetOffset === 0)) {
+        if (list.innerHTML !== html) {
+          list.innerHTML = html || (result.conversations.length ? "" : '<div class="admin-empty">Nenhuma conversa encontrada.</div>');
+          applyConversationFilter();
+        }
+      } else {
+        list.insertAdjacentHTML("beforeend", html);
+        if (reset && !result.conversations.length) {
+          list.innerHTML = '<div class="admin-empty">Nenhuma conversa encontrada.</div>';
+        }
+        applyConversationFilter();
       }
-      applyConversationFilter();
       offset = result.next_offset;
-      more.hidden = !result.has_more;
+      if (more) more.hidden = !result.has_more;
       if (activeId) {
         list.querySelectorAll("[data-conversation-id]").forEach((button) => {
           const selected = Number(button.dataset.conversationId) === activeId;
@@ -737,12 +746,18 @@ function initAdminChat() {
       messagesEl.innerHTML = '<div class="admin-empty">Nenhuma mensagem nessa conversa.</div>';
       return;
     }
-    messagesEl.innerHTML = result.messages.map((message) => {
+    const newHtml = result.messages.map((message) => {
       const text = message.text ? `<p>${escapeHtml(message.text).replaceAll("\n", "<br>")}</p>` : "";
       const fallback = !text && !message.media_url ? `<p>${escapeHtml(message.media_name || message.message_type || "Mensagem")}</p>` : "";
       return `<article class="chat-bubble ${message.direction === "out" ? "is-out" : "is-in"}">${text || fallback}${renderMedia(message)}<time datetime="${escapeHtml(message.created_at || "")}">${escapeHtml(localDate(message.created_at))} · ${escapeHtml(message.status || "registrada")}</time></article>`;
     }).join("");
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    const isAtBottom = (messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight) < 120;
+    if (messagesEl.innerHTML !== newHtml) {
+      messagesEl.innerHTML = newHtml;
+      if (!quiet || isAtBottom) {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+    }
   }
 
   list.addEventListener("click", (event) => {
@@ -909,10 +924,10 @@ function initAdminChat() {
   loadConversationList({ reset: true }).catch((error) => { note.textContent = error.message; });
   window.setInterval(() => {
     if (!document.hidden && activeId) loadMessages(activeId, { quiet: true }).catch(() => {});
-  }, 15000);
+  }, 2000);
   window.setInterval(() => {
-    if (!document.hidden && !search?.value.trim()) loadConversationList({ reset: true }).catch(() => {});
-  }, 30000);
+    if (!document.hidden && !search?.value.trim()) loadConversationList({ quiet: true }).catch(() => {});
+  }, 2000);
 }
 
 initAdminChat();
