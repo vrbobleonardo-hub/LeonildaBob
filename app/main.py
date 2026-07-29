@@ -46,7 +46,7 @@ from .whatsapp import (
     send_whatsapp_media,
     send_whatsapp_text,
 )
-from .whatsapp_qr import qr_session_action, qr_session_status
+from .whatsapp_qr import ensure_qr_bridge_running, qr_session_action, qr_session_status
 
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -181,6 +181,11 @@ async def lifespan(application: FastAPI):
     except RuntimeError:
         application.state.storage_ready = False
     cleanup_retention()
+    if settings.whatsapp_provider == "qr" and not settings.whatsapp_dry_run:
+        try:
+            qr_session_status(start=True)
+        except Exception:
+            pass
     application.state.outbox_task = asyncio.create_task(outbox_worker())
     application.state.webhook_task = asyncio.create_task(webhook_worker())
     application.state.retention_task = asyncio.create_task(retention_worker())
@@ -494,12 +499,15 @@ class QrSessionPayload(BaseModel):
 
 
 class QrInboundPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    phone: str = Field(min_length=8, max_length=32)
-    text: str = Field(min_length=1, max_length=4096)
+    model_config = ConfigDict(extra="allow")
+    phone: str = Field(min_length=1, max_length=120)
+    text: str = Field(min_length=1, max_length=8192)
     name: Optional[str] = Field(default=None, max_length=120)
     provider_message_id: Optional[str] = Field(default=None, max_length=240)
-    message_type: Literal["text", "image", "video", "audio", "document", "interactive"] = "text"
+    external_id: Optional[str] = Field(default=None, max_length=240)
+    phone_number_id: Optional[str] = Field(default=None, max_length=120)
+    message_type: str = "text"
+    send_reply: bool = True
     raw: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("text", "name", "provider_message_id", mode="before")
@@ -1857,24 +1865,29 @@ def receive_qr_inbound(payload: QrInboundPayload, request: Request) -> JSONRespo
     verify_qr_bridge_request(request)
     if settings.whatsapp_provider != "qr":
         raise HTTPException(status_code=409, detail="O provedor QR não está ativo.")
-    if payload.provider_message_id and db.whatsapp_message_exists(payload.provider_message_id):
+    dedup_id = payload.external_id or payload.provider_message_id or ""
+    if dedup_id and db.whatsapp_message_exists(dedup_id):
         return JSONResponse({"ok": True, "duplicate": True})
+    phone_raw = (payload.phone or "").strip()
+    if not phone_raw:
+        raise HTTPException(status_code=400, detail="Telefone obrigatório.")
     try:
-        phone = normalize_phone(payload.phone)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        phone = normalize_phone(phone_raw)
+    except ValueError:
+        phone = phone_raw
     conversation_id = db.get_or_create_conversation(phone, name=payload.name or "")
     db.record_whatsapp_message(
         conversation_id,
         direction="in",
         text=payload.text,
         message_type=payload.message_type,
-        provider_message_id=payload.provider_message_id,
+        provider_message_id=dedup_id or None,
         status="received",
         raw_payload={"source": "whatsapp_qr_bridge", **payload.raw},
     )
     if (
-        settings.whatsapp_auto_reply
+        payload.send_reply
+        and settings.whatsapp_auto_reply
         and db.can_auto_reply(conversation_id, settings.whatsapp_auto_reply_cooldown_seconds)
     ):
         reply = auto_reply_for_inbound(payload.text)
