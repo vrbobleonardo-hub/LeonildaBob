@@ -360,16 +360,24 @@
         <div class="qr-connection-copy">
           <p class="eyebrow">Conexão por QR</p>
           <h3 id="qr-connection-title">Vincular WhatsApp Web</h3>
-          <p data-qr-description>Ative <code>WHATSAPP_PROVIDER=qr</code> e desative o modo teste para vincular este canal.</p>
+          <p data-qr-description>
+            {% if whatsapp_provider != "qr" %}
+              Ative <code>WHATSAPP_PROVIDER=qr</code> e desative o modo teste para vincular este canal.
+            {% elif dry_run %}
+              O modo teste está ativo. Defina <code>WHATSAPP_DRY_RUN=0</code> e reinicie o serviço para gerar um QR real.
+            {% else %}
+              Gere o QR e leia-o pelo WhatsApp do telefone que será usado no atendimento.
+            {% endif %}
+          </p>
           <dl class="qr-connection-meta">
-            <div><dt>Status</dt><dd data-qr-status>Verificando configuração...</dd></div>
+            <div><dt>Status</dt><dd data-qr-status>{% if whatsapp_provider == "qr" and not dry_run %}Verificando conexão...{% else %}Configuração pendente{% endif %}</dd></div>
             <div><dt>Número vinculado</dt><dd data-qr-number>—</dd></div>
             <div><dt>Última conexão</dt><dd data-qr-connected>—</dd></div>
           </dl>
           <div class="qr-connection-actions">
-            <button type="button" data-qr-connect>Gerar QR</button>
+            <button type="button" data-qr-connect{% if whatsapp_provider != "qr" or dry_run %} disabled aria-disabled="true"{% endif %}>Gerar QR</button>
             <button type="button" data-qr-refresh class="is-secondary">Atualizar</button>
-            <button type="button" data-qr-reset class="is-secondary">Desconectar</button>
+            <button type="button" data-qr-reset class="is-secondary"{% if whatsapp_provider != "qr" or dry_run %} disabled aria-disabled="true"{% endif %}>Desconectar</button>
           </div>
           <p class="qr-connection-note" data-qr-note aria-live="polite"></p>
         </div>

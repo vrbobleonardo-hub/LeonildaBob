@@ -152,7 +152,7 @@ async function startSession({ force = false } = {}) {
     patch({ status: "connecting", lastError: null });
     const socket = makeWASocket({
       auth: state,
-      browser: ["Bob Advogados", "Chrome", "1.0"],
+      browser: ["Ubuntu", "Chrome", "20.0.04"],
       logger,
       markOnlineOnConnect: false,
       printQRInTerminal: false,
