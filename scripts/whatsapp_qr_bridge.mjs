@@ -9,8 +9,8 @@ const INBOUND_URL = process.env.WHATSAPP_QR_INBOUND_URL || `http://127.0.0.1:${p
 const AUTH_DIR = path.resolve(process.env.WHATSAPP_QR_AUTH_DIR || ".whatsapp-qr-auth/default");
 const QR_EXPIRES_MS = 55_000;
 const MEDIA_MAX_BYTES = Number(process.env.WHATSAPP_QR_MEDIA_MAX_BYTES || 15 * 1024 * 1024);
-const SYNC_RECENT_HISTORY = process.env.WHATSAPP_QR_SYNC_RECENT_HISTORY !== "0";
-const HISTORY_LOOKBACK_MS = Number(process.env.WHATSAPP_QR_HISTORY_LOOKBACK_MS || 36 * 60 * 60 * 1000);
+const SYNC_RECENT_HISTORY = process.env.WHATSAPP_QR_SYNC_RECENT_HISTORY === "1";
+const HISTORY_LOOKBACK_MS = Number(process.env.WHATSAPP_QR_HISTORY_LOOKBACK_MS || 0);
 
 const runtime = {
   socket: null,
@@ -656,10 +656,8 @@ async function startSession(options = {}) {
         recent: recent.length,
         sync_type: event?.syncType ?? null,
         progress: event?.progress ?? null,
+        action: "ignored_to_prevent_spam",
       });
-      for (const message of recent) {
-        await processInboundMessage(message, "whatsapp_qr_history");
-      }
     });
 
     socket.ev.on("connection.update", async (update) => {
