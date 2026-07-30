@@ -225,7 +225,7 @@ class ConnectionAdapter:
         table = insert_match.group(1).lower() if insert_match else ""
         returns_id = bool(
             table
-            and table not in {"admin_sessions", "schema_migrations"}
+            and table not in {"admin_sessions", "schema_migrations", "whatsapp_qr_auth_store"}
             and " RETURNING " not in sql.upper()
         )
         if returns_id:
