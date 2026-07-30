@@ -616,10 +616,27 @@ def readyz() -> JSONResponse:
     database_ready = db.healthcheck()
     storage_ready = not storage.configured() or bool(getattr(app.state, "storage_ready", False))
     status_code = 200 if database_ready and storage_ready else 503
-    return JSONResponse(
-        {"status": "ready" if status_code == 200 else "degraded", "database": database_ready, "storage": storage_ready},
-        status_code=status_code,
-    )
+    result: dict[str, Any] = {
+        "status": "ready" if status_code == 200 else "degraded",
+        "database": database_ready,
+        "storage": storage_ready,
+    }
+    if settings.whatsapp_provider == "qr":
+        try:
+            qr_status = qr_session_status()
+            session = qr_status.get("session") or {}
+            result["qr_bridge"] = {
+                "bridge_running": qr_status.get("bridge_running", False),
+                "status": session.get("status", "unknown"),
+                "connected": session.get("runtime_connected", False),
+                "can_send": session.get("can_send", False),
+                "needs_scan": session.get("needs_scan", True),
+                "auth_available": session.get("auth_available", False),
+                "last_error": session.get("last_error"),
+            }
+        except Exception as exc:
+            result["qr_bridge"] = {"error": str(exc)}
+    return JSONResponse(result, status_code=status_code)
 
 
 @app.exception_handler(404)
