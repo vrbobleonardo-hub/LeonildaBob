@@ -13,9 +13,9 @@ services:
       - key: APP_ENV
         value: production
       - key: APP_BASE_URL
-        value: https://leonildabob.onrender.com
+        value: https://bobadvogados.com.br
       - key: ALLOWED_HOSTS
-        value: leonildabob.onrender.com,127.0.0.1,localhost
+        value: bobadvogados.com.br,leonildabob.onrender.com,127.0.0.1,localhost
       - key: COOKIE_SECURE
         value: "1"
       - key: DOCS_ENABLED
