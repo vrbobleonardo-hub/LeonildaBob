@@ -639,6 +639,17 @@ def readyz() -> JSONResponse:
     return JSONResponse(result, status_code=status_code)
 
 
+@app.get("/api/admin/bridge-logs", include_in_schema=False)
+def bridge_logs() -> Response:
+    import os
+    log_path = ROOT_DIR / "data" / "whatsapp_qr_bridge.log"
+    if not os.path.exists(log_path):
+        return Response("No log file", media_type="text/plain")
+    with open(log_path, "r") as f:
+        # Get last 100 lines
+        lines = f.readlines()
+        return Response("".join(lines[-100:]), media_type="text/plain")
+
 @app.exception_handler(404)
 async def not_found_page(request: Request, _exc: Exception) -> Response:
     if request.url.path.startswith("/api/"):
@@ -650,7 +661,6 @@ async def not_found_page(request: Request, _exc: Exception) -> Response:
         "A página solicitada não foi encontrada.",
     )
     return templates.TemplateResponse(request, "404.html", context=context, status_code=404)
-
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
