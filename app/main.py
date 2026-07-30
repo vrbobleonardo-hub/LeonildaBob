@@ -1852,11 +1852,13 @@ def verify_qr_bridge_request(request: Request) -> None:
         if not secrets.compare_digest(received_token, expected_token):
             raise HTTPException(status_code=403, detail="Bridge QR não autorizado.")
         return
+    # Bridge runs as a local subprocess — always trust localhost
+    client_host = request.client.host if request.client else ""
+    if client_host in {"127.0.0.1", "::1", "testclient"}:
+        return
     if settings.is_production:
         raise HTTPException(status_code=503, detail="Token do bridge QR não configurado.")
-    client_host = request.client.host if request.client else ""
-    if client_host not in {"127.0.0.1", "::1", "testclient"}:
-        raise HTTPException(status_code=403, detail="Bridge QR não autorizado.")
+    raise HTTPException(status_code=403, detail="Bridge QR não autorizado.")
 
 @app.post("/api/webhooks/whatsapp/qr/auth-backup")
 def backup_qr_auth(request: Request) -> JSONResponse:
