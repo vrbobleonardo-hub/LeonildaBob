@@ -11,6 +11,7 @@ import requests
 
 from . import db
 from .settings import BRAZILIAN_AREA_CODES, settings
+from .whatsapp_evolution import send_via_evolution, send_via_evolution_media
 from .whatsapp_qr import send_via_qr_bridge as send_via_qr_connector
 
 
@@ -270,12 +271,26 @@ def send_whatsapp_text(
     conversation_id: int | None = None,
     first_contact: bool = False,
 ) -> dict[str, Any]:
+    try:
+        recipient = normalize_phone(to)
+    except ValueError:
+        recipient = str(to or "").strip()
+    if db.is_whatsapp_opted_out(recipient):
+        raise RuntimeError("Este contato solicitou não receber mensagens pelo WhatsApp.")
     provider_message_id = None
     status = "dry_run"
     raw: dict[str, Any] = {}
     if not settings.whatsapp_dry_run:
         if settings.whatsapp_provider == "qr":
             raw = send_via_qr_bridge(to, text)
+            if not raw.get("sent"):
+                raise RuntimeError(str(raw.get("reason") or "Não foi possível enviar pelo QR."))
+            provider_message_id = str(raw.get("provider_message_id") or "") or None
+            status = "sent"
+        elif settings.whatsapp_provider == "evolution":
+            raw = send_via_evolution(to, text)
+            if not raw.get("sent"):
+                raise RuntimeError(str(raw.get("reason") or "A Evolution API recusou o envio."))
             provider_message_id = str(raw.get("provider_message_id") or "") or None
             status = "sent"
         else:
@@ -308,6 +323,12 @@ def send_whatsapp_media(
     conversation_id: int | None = None,
     public_url: str | None = None,
 ) -> dict[str, Any]:
+    try:
+        recipient = normalize_phone(to)
+    except ValueError:
+        recipient = str(to or "").strip()
+    if db.is_whatsapp_opted_out(recipient):
+        raise RuntimeError("Este contato solicitou não receber mensagens pelo WhatsApp.")
     path = Path(file_path)
     mime = mime_type or mimetypes.guess_type(filename or path.name)[0] or "application/octet-stream"
     media_type = media_kind_from_mime(mime)
@@ -318,6 +339,19 @@ def send_whatsapp_media(
     if not settings.whatsapp_dry_run:
         if settings.whatsapp_provider == "qr":
             raise RuntimeError("O provedor QR configurado não suporta envio seguro de arquivos.")
+        if settings.whatsapp_provider == "evolution":
+            raw = send_via_evolution_media(
+                to,
+                file_path=path,
+                media_type=media_type,
+                mime_type=mime,
+                filename=filename or path.name,
+                caption=caption,
+            )
+            if not raw.get("sent"):
+                raise RuntimeError(str(raw.get("reason") or "A Evolution API recusou o arquivo."))
+            provider_message_id = str(raw.get("provider_message_id") or "") or None
+            status = "sent"
         else:
             upload = upload_official_media(path, mime)
             provider_media_id = str(upload.get("id") or "")

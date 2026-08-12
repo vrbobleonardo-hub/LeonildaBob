@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import mimetypes
 import re
 import secrets
 import time
+import unicodedata
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -46,6 +49,11 @@ from .whatsapp import (
     send_whatsapp_media,
     send_whatsapp_text,
 )
+from .whatsapp_evolution import (
+    evolution_inbound_messages,
+    evolution_session_action,
+    evolution_session_status,
+)
 from .whatsapp_qr import ensure_qr_bridge_running, qr_session_action, qr_session_status
 
 
@@ -60,6 +68,7 @@ BLOG_CATEGORIES = (
     "Reflexões",
 )
 BLOG_PAGE_SIZE = 9
+WHATSAPP_OPT_OUT_KEYWORDS = frozenset({"parar", "sair", "stop", "cancelar", "remover"})
 MONTH_NAMES = (
     "janeiro", "fevereiro", "março", "abril", "maio", "junho",
     "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
@@ -117,6 +126,7 @@ class RequestBodyLimitMiddleware:
             "/api/leads": 128 * 1024,
             "/api/track": 64 * 1024,
             "/api/webhooks/whatsapp": 2 * 1024 * 1024,
+            "/api/webhooks/whatsapp/evolution": self.max_bytes,
             "/contato/enviar": 128 * 1024,
         }
         request_limit = min(self.max_bytes, route_limits.get(path, self.max_bytes))
@@ -186,6 +196,11 @@ async def lifespan(application: FastAPI):
             qr_session_status(start=True)
         except Exception:
             pass
+    elif settings.whatsapp_provider == "evolution" and not settings.whatsapp_dry_run:
+        try:
+            evolution_session_status(start=True)
+        except Exception:
+            pass
     application.state.outbox_task = asyncio.create_task(outbox_worker())
     application.state.webhook_task = asyncio.create_task(webhook_worker())
     application.state.retention_task = asyncio.create_task(retention_worker())
@@ -218,7 +233,10 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 app.add_middleware(SelectiveGZipMiddleware, minimum_size=700)
 app.add_middleware(
     RequestBodyLimitMiddleware,
-    max_bytes=settings.max_upload_bytes + 2 * 1024 * 1024,
+    max_bytes=max(
+        settings.max_upload_bytes + 2 * 1024 * 1024,
+        ((settings.max_upload_bytes + 2) // 3) * 4 + 2 * 1024 * 1024,
+    ),
 )
 templates = Jinja2Templates(directory=settings.template_dir)
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
@@ -555,6 +573,9 @@ def dispatch_pending_outbox() -> None:
     if not pending:
         return
     item = pending[0]
+    if db.is_whatsapp_opted_out(item["recipient"]):
+        db.mark_outbox_suppressed(int(item["id"]))
+        return
     try:
         conversation_id = db.get_or_create_conversation(
             item["recipient"],
@@ -623,6 +644,27 @@ def healthz() -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+def whatsapp_connection_status(*, start: bool = False) -> dict[str, Any]:
+    if settings.whatsapp_provider == "evolution":
+        return evolution_session_status(start=start)
+    return qr_session_status(start=start)
+
+
+def whatsapp_connection_action(action: str, *, force: bool = False) -> dict[str, Any]:
+    if settings.whatsapp_provider == "evolution":
+        return evolution_session_action(action, force=force)
+    return qr_session_action(action, force=force)
+
+
+def whatsapp_inbound_webhook_url() -> str:
+    suffix_by_provider = {
+        "evolution": "/api/webhooks/whatsapp/evolution",
+        "qr": "/api/webhooks/whatsapp/qr",
+    }
+    suffix = suffix_by_provider.get(settings.whatsapp_provider, "/api/webhooks/whatsapp")
+    return f"{settings.app_base_url.rstrip('/')}{suffix}"
+
+
 @app.get("/readyz", include_in_schema=False)
 def readyz() -> JSONResponse:
     database_ready = db.healthcheck()
@@ -633,12 +675,13 @@ def readyz() -> JSONResponse:
         "database": database_ready,
         "storage": storage_ready,
     }
-    if settings.whatsapp_provider == "qr":
+    if settings.whatsapp_provider in {"qr", "evolution"}:
         try:
-            qr_status = qr_session_status()
-            session = qr_status.get("session") or {}
-            result["qr_bridge"] = {
-                "bridge_running": qr_status.get("bridge_running", False),
+            connection_status = whatsapp_connection_status()
+            session = connection_status.get("session") or {}
+            result["whatsapp_connection"] = {
+                "provider": settings.whatsapp_provider,
+                "service_reachable": connection_status.get("bridge_running", False),
                 "status": session.get("status", "unknown"),
                 "connected": session.get("runtime_connected", False),
                 "can_send": session.get("can_send", False),
@@ -647,7 +690,7 @@ def readyz() -> JSONResponse:
                 "last_error": session.get("last_error"),
             }
         except Exception as exc:
-            result["qr_bridge"] = {"error": str(exc)}
+            result["whatsapp_connection"] = {"error": str(exc)}
     return JSONResponse(result, status_code=status_code)
 
 
@@ -1275,15 +1318,40 @@ def admin(request: Request) -> HTMLResponse:
         "Admin | Leonilda Bob",
         "Painel local de contatos, visitas e WhatsApp.",
     )
+    official_ready = bool(settings.whatsapp_access_token and settings.whatsapp_phone_number_id)
+    evolution_ready = bool(
+        settings.evolution_api_url
+        and settings.evolution_api_key
+        and settings.evolution_webhook_token
+    )
+    connection_ready_by_provider = {
+        "official": official_ready,
+        "qr": bool(settings.whatsapp_qr_bridge_token),
+        "evolution": evolution_ready,
+    }
+    webhook_guard_by_provider = {
+        "official": bool(settings.whatsapp_verify_token),
+        "qr": bool(settings.whatsapp_qr_bridge_token),
+        "evolution": bool(settings.evolution_webhook_token),
+    }
     context.update(
         {
             "snapshot": snapshot,
             "dry_run": settings.whatsapp_dry_run,
             "whatsapp_provider": settings.whatsapp_provider,
-            "official_ready": bool(settings.whatsapp_access_token and settings.whatsapp_phone_number_id),
-            "webhook_url": f"{settings.app_base_url.rstrip('/')}/api/webhooks/whatsapp",
+            "whatsapp_provider_label": {
+                "official": "API oficial da Meta",
+                "qr": "Ponte QR local",
+                "evolution": "Evolution API",
+            }.get(settings.whatsapp_provider, settings.whatsapp_provider),
+            "connection_ready": connection_ready_by_provider.get(settings.whatsapp_provider, False),
+            "official_ready": official_ready,
+            "evolution_ready": evolution_ready,
+            "webhook_url": whatsapp_inbound_webhook_url(),
+            "webhook_guard_ready": webhook_guard_by_provider.get(settings.whatsapp_provider, False),
             "verify_token_set": bool(settings.whatsapp_verify_token),
             "template_set": bool(settings.whatsapp_first_contact_template),
+            "whatsapp_auto_reply": settings.whatsapp_auto_reply,
             "admin_user": user,
         }
     )
@@ -1567,6 +1635,11 @@ def admin_send_message(
     conversation = db.get_conversation(conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    if db.is_whatsapp_opted_out(conversation["phone"]):
+        raise HTTPException(
+            status_code=409,
+            detail="Este contato solicitou a interrupção das mensagens pelo WhatsApp.",
+        )
     clean_text = (text or "").strip()
     if len(clean_text) > 4096:
         raise HTTPException(status_code=400, detail="Mensagem muito longa. Use até 4.096 caracteres.")
@@ -1700,8 +1773,8 @@ def admin_whatsapp_status(request: Request) -> JSONResponse:
             "access_token_set": bool(settings.whatsapp_access_token),
             "verify_token_set": bool(settings.whatsapp_verify_token),
             "template_set": bool(settings.whatsapp_first_contact_template),
-            "webhook_url": f"{settings.app_base_url.rstrip('/')}/api/webhooks/whatsapp",
-            "qr": qr_session_status(start=False),
+            "webhook_url": whatsapp_inbound_webhook_url(),
+            "connection": whatsapp_connection_status(start=False),
         }
     )
 
@@ -1709,7 +1782,7 @@ def admin_whatsapp_status(request: Request) -> JSONResponse:
 @app.get("/api/admin/whatsapp/qr/session")
 def admin_qr_session_status(request: Request) -> JSONResponse:
     require_admin(request)
-    return JSONResponse({"ok": True, **qr_session_status(start=False)})
+    return JSONResponse({"ok": True, **whatsapp_connection_status(start=False)})
 
 
 @app.post("/api/admin/whatsapp/qr/session")
@@ -1721,7 +1794,7 @@ def admin_qr_session_action(
     verify_same_origin(request)
     verify_session_csrf(request)
     try:
-        result = qr_session_action(payload.action, force=payload.force)
+        result = whatsapp_connection_action(payload.action, force=payload.force)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return JSONResponse({"ok": True, **result})
@@ -1740,6 +1813,9 @@ def retry_outbox(outbox_id: int, request: Request) -> JSONResponse:
             status_code=409,
             detail="Este envio já foi concluído ou está aguardando a fila automática.",
         )
+    if db.is_whatsapp_opted_out(item["recipient"]):
+        db.mark_outbox_suppressed(outbox_id)
+        return JSONResponse({"ok": False, "status": "suppressed", "error": "Contato optou por não receber mensagens."})
     try:
         conversation_id = db.get_or_create_conversation(
             item["recipient"], source_lead_id=item.get("lead_id")
@@ -1782,6 +1858,21 @@ def extract_message_text(message: dict[str, Any]) -> str:
             if isinstance(interactive.get(key), dict):
                 return str(interactive[key].get("title") or interactive[key].get("id") or "").strip()
     return ""
+
+
+def is_whatsapp_opt_out_request(text: str) -> bool:
+    normalized = unicodedata.normalize("NFKD", (text or "").strip().casefold())
+    normalized = "".join(character for character in normalized if not unicodedata.combining(character))
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized in WHATSAPP_OPT_OUT_KEYWORDS
+
+
+def apply_whatsapp_opt_out(phone: str, text: str, *, source: str) -> bool:
+    if not is_whatsapp_opt_out_request(text):
+        return False
+    db.set_whatsapp_opt_out(phone, source=source, reason=text.strip() or "PARAR")
+    logger.info(json.dumps({"event": "whatsapp.contact_opted_out", "source": source}))
+    return True
 
 
 def process_whatsapp_payload(payload: dict[str, Any]) -> None:
@@ -1863,9 +1954,12 @@ def process_whatsapp_payload(payload: dict[str, Any]) -> None:
                     raw_payload=raw_payload,
                     **media_payload,
                 )
+                if apply_whatsapp_opt_out(phone, text, source="official_webhook"):
+                    continue
                 if (
                     settings.whatsapp_auto_reply
                     and text
+                    and not db.is_whatsapp_opted_out(phone)
                     and db.can_auto_reply(
                         conversation_id, settings.whatsapp_auto_reply_cooldown_seconds
                     )
@@ -1898,6 +1992,94 @@ def verify_qr_bridge_request(request: Request) -> None:
     if settings.is_production:
         raise HTTPException(status_code=503, detail="Token do bridge QR não configurado.")
     raise HTTPException(status_code=403, detail="Bridge QR não autorizado.")
+
+
+def verify_evolution_webhook_request(request: Request) -> None:
+    expected_token = settings.evolution_webhook_token
+    received_token = request.headers.get("x-evolution-webhook-token", "")
+    if expected_token and secrets.compare_digest(received_token, expected_token):
+        return
+    if not expected_token and not settings.is_production:
+        client_host = request.client.host if request.client else ""
+        if client_host in {"127.0.0.1", "::1", "testclient"}:
+            return
+    if not expected_token and settings.is_production:
+        raise HTTPException(status_code=503, detail="Token do webhook Evolution não configurado.")
+    raise HTTPException(status_code=403, detail="Webhook Evolution não autorizado.")
+
+
+def record_evolution_inbound(item: dict[str, Any]) -> int | None:
+    provider_message_id = str(item.get("provider_message_id") or "")
+    if provider_message_id and db.whatsapp_message_exists(provider_message_id):
+        return None
+    try:
+        phone = normalize_phone(str(item.get("phone") or ""))
+    except ValueError:
+        return None
+    text = str(item.get("text") or "Mensagem recebida.")[:8192]
+    raw_payload = dict(item.get("raw")) if isinstance(item.get("raw"), dict) else {"source": "evolution"}
+    media_payload: dict[str, Any] = {}
+    encoded_media = str(item.get("media_base64") or "")
+    if encoded_media:
+        local_path: Path | None = None
+        try:
+            content = base64.b64decode(encoded_media, validate=True)
+            mime_type = str(item.get("media_mime") or "").split(";", 1)[0].strip().lower()
+            filename = safe_filename(str(item.get("media_name") or "arquivo"))
+            local_path, local_name, mime_type, media_size = save_validated_bytes(
+                content, filename, mime_type
+            )
+            if storage.configured():
+                _object_path, media_url = storage.upload_file(local_path, local_name, mime_type)
+                local_path.unlink(missing_ok=True)
+            else:
+                media_url = storage.admin_media_url(f"local/{local_path.name}", local_name)
+            media_payload = {
+                "media_url": media_url,
+                "media_mime": mime_type,
+                "media_name": local_name,
+                "media_size": media_size,
+                "media_provider_id": provider_message_id or None,
+            }
+        except (binascii.Error, ValueError, OSError, HTTPException, RuntimeError) as exc:
+            if local_path:
+                local_path.unlink(missing_ok=True)
+            raw_payload["media_error"] = str(exc)[:300]
+    elif item.get("media_error"):
+        raw_payload["media_error"] = str(item["media_error"])[:80]
+    conversation_id = db.get_or_create_conversation(phone, name=str(item.get("name") or ""))
+    db.record_whatsapp_message(
+        conversation_id,
+        direction="in",
+        text=text,
+        message_type=str(item.get("message_type") or "text")[:40],
+        provider_message_id=provider_message_id or None,
+        **media_payload,
+        status="received",
+        raw_payload=raw_payload,
+    )
+    if apply_whatsapp_opt_out(phone, text, source="evolution_webhook"):
+        return conversation_id
+    if (
+        settings.whatsapp_auto_reply
+        and text
+        and not db.is_whatsapp_opted_out(phone)
+        and db.can_auto_reply(conversation_id, settings.whatsapp_auto_reply_cooldown_seconds)
+    ):
+        reply = auto_reply_for_inbound(text)
+        try:
+            send_whatsapp_text(phone, reply, conversation_id=conversation_id)
+            db.mark_auto_reply(conversation_id)
+        except Exception as exc:  # pragma: no cover - external integration path
+            db.record_whatsapp_message(
+                conversation_id,
+                direction="out",
+                text=reply,
+                status="failed",
+                raw_payload={"error": str(exc), "source": "evolution_auto_reply"},
+            )
+    return conversation_id
+
 
 @app.post("/api/webhooks/whatsapp/qr/auth-backup")
 def backup_qr_auth(request: Request) -> JSONResponse:
@@ -1936,9 +2118,12 @@ def receive_qr_inbound(payload: QrInboundPayload, request: Request) -> JSONRespo
         status="received",
         raw_payload={"source": "whatsapp_qr_bridge", **payload.raw},
     )
+    if apply_whatsapp_opt_out(phone, payload.text, source="qr_webhook"):
+        return JSONResponse({"ok": True, "conversation_id": conversation_id, "opted_out": True})
     if (
         payload.send_reply
         and settings.whatsapp_auto_reply
+        and not db.is_whatsapp_opted_out(phone)
         and db.can_auto_reply(conversation_id, settings.whatsapp_auto_reply_cooldown_seconds)
     ):
         reply = auto_reply_for_inbound(payload.text)
@@ -1954,6 +2139,31 @@ def receive_qr_inbound(payload: QrInboundPayload, request: Request) -> JSONRespo
                 raw_payload={"error": str(exc)},
             )
     return JSONResponse({"ok": True, "conversation_id": conversation_id})
+
+
+@app.post("/api/webhooks/whatsapp/evolution")
+async def receive_evolution_inbound(request: Request) -> JSONResponse:
+    rate_limit(request, "whatsapp-evolution-inbound", limit=300, window_seconds=60)
+    verify_evolution_webhook_request(request)
+    if settings.whatsapp_provider != "evolution" or settings.whatsapp_dry_run:
+        raise HTTPException(status_code=409, detail="A Evolution API não está ativa.")
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+        raise HTTPException(status_code=415, detail="Use conteúdo JSON.")
+    try:
+        payload = await request.json()
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Conteúdo inválido.") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Evento Evolution inválido.")
+    recorded = 0
+    duplicate = 0
+    for item in evolution_inbound_messages(payload):
+        conversation_id = record_evolution_inbound(item)
+        if conversation_id is None:
+            duplicate += 1
+        else:
+            recorded += 1
+    return JSONResponse({"ok": True, "recorded": recorded, "duplicate": duplicate})
 
 
 @app.post("/api/webhooks/whatsapp")

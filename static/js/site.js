@@ -564,16 +564,30 @@ function initAdminChat() {
   const qrCodePanel = app.querySelector("[data-qr-code-panel]");
   const qrImage = app.querySelector("[data-qr-image]");
 
-  function qrStatusLabel(session, enabled) {
-    if (!enabled) return "Ative o provedor QR";
-    if (session?.status === "unavailable") return "Bridge QR indisponível";
+  const connectionErrorLabels = {
+    evolution_dry_run_enabled: "O modo teste está ativo. Desative-o no Render para gerar um QR real.",
+    evolution_provider_not_enabled: "A Evolution API não é o provedor selecionado neste ambiente.",
+    evolution_not_configured: "Preencha a URL e a chave da Evolution API no Render.",
+    qr_dry_run_enabled: "O modo teste está ativo. Desative-o para gerar um QR real.",
+    qr_provider_not_enabled: "A conexão por QR não é o provedor selecionado neste ambiente.",
+  };
+
+  function connectionErrorLabel(error) {
+    if (!error) return "";
+    return connectionErrorLabels[error] || error;
+  }
+
+  function qrStatusLabel(session, enabled, provider) {
+    if (!enabled && session?.last_error?.includes("dry_run")) return "Modo teste ativo";
+    if (!enabled) return "Configuração pendente";
+    if (session?.status === "unavailable") return provider === "evolution" ? "Evolution indisponível" : "Bridge QR indisponível";
     const labels = {
       connected: "Conectado",
       connecting: "Conectando",
       qr: "Aguardando leitura do QR",
       disconnected: "Desconectado",
       failed: "Falha de conexão",
-      unavailable: "Bridge indisponível",
+      unavailable: provider === "evolution" ? "Evolution indisponível" : "Bridge indisponível",
     };
     return labels[session?.status] || "Aguardando conexão";
   }
@@ -582,19 +596,22 @@ function initAdminChat() {
     if (!qrPanel) return;
     const session = payload?.session || {};
     const enabled = payload?.enabled === true;
+    const provider = payload?.provider || "qr";
     const isConnected = session.status === "connected" && session.can_send;
-    qrStatus.textContent = qrStatusLabel(session, enabled);
+    qrStatus.textContent = qrStatusLabel(session, enabled, provider);
     qrNumber.textContent = session.phone_wa_id || "—";
     qrConnected.textContent = session.last_connected_at ? localDate(session.last_connected_at) : "—";
     qrDescription.textContent = enabled
       ? (isConnected ? "A sessão está pronta para enviar e receber mensagens neste inbox." : "Gere o QR e leia-o pelo WhatsApp do telefone que será usado no atendimento.")
-      : "Para usar este canal, configure WHATSAPP_PROVIDER=qr, WHATSAPP_DRY_RUN=0 e reinicie o serviço.";
+      : (provider === "qr"
+        ? "Ative a ponte QR e desative o modo teste para vincular este canal."
+        : "Ative a Evolution API e desative o modo teste para vincular este canal.");
     qrCodePanel.hidden = !session.qr_data_url;
     if (session.qr_data_url) qrImage.src = session.qr_data_url;
     if (!session.qr_data_url) qrImage.removeAttribute("src");
     app.querySelector("[data-qr-connect]").disabled = !enabled || isConnected;
     app.querySelector("[data-qr-reset]").disabled = !enabled;
-    if (session.last_error) qrNote.textContent = `Conexão: ${session.last_error}`;
+    if (session.last_error) qrNote.textContent = connectionErrorLabel(session.last_error);
     else if (session.qr_expires_at) qrNote.textContent = `O código expira em ${localDate(session.qr_expires_at)}.`;
     else qrNote.textContent = "";
   }
@@ -619,7 +636,7 @@ function initAdminChat() {
       if (!response.ok) throw new Error(formatApiError(payload));
       renderQrSession(payload);
     } catch (error) {
-      qrNote.textContent = error.message || "Não foi possível consultar a conexão QR.";
+      qrNote.textContent = error.message || "Não foi possível consultar a conexão do WhatsApp.";
     } finally {
       if (actionButton) actionButton.textContent = "Gerar QR";
     }

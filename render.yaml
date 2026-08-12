@@ -50,6 +50,16 @@ services:
         sync: false
       - key: WHATSAPP_QR_BRIDGE_AUTOSTART
         value: "0"
+      - key: EVOLUTION_API_URL
+        sync: false
+      - key: EVOLUTION_API_KEY
+        sync: false
+      - key: EVOLUTION_INSTANCE
+        value: bob-advogados
+      - key: EVOLUTION_WEBHOOK_TOKEN
+        sync: false
+      - key: EVOLUTION_REQUEST_TIMEOUT_SECONDS
+        value: "20"
       - key: WHATSAPP_ACCESS_TOKEN
         sync: false
       - key: WHATSAPP_PHONE_NUMBER_ID

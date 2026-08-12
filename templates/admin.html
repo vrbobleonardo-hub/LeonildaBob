@@ -11,13 +11,15 @@
         <h1>Central de atendimento.</h1>
         <p>Fila de contatos, conversas do WhatsApp, origem dos leads e próximos passos em uma tela operacional.</p>
       </div>
-      <div class="admin-status-pill {{ 'is-ready' if official_ready and not dry_run else 'is-test' }}">
+      <div class="admin-status-pill {{ 'is-ready' if (official_ready or evolution_ready) and not dry_run else 'is-test' }}">
         {% if dry_run %}
           Modo teste
         {% elif whatsapp_provider == "official" and official_ready %}
           WhatsApp oficial ativo
         {% elif whatsapp_provider == "qr" %}
           Envio por QR
+        {% elif whatsapp_provider == "evolution" and evolution_ready %}
+          Evolution API ativa
         {% else %}
           Aguardando conexão
         {% endif %}
@@ -325,7 +327,7 @@
           <p class="eyebrow">Conexão</p>
           <h2>Canais do WhatsApp</h2>
         </div>
-        <p>Use a API oficial da Meta ou conecte uma sessão operacional por QR. O QR funciona como WhatsApp Web e exige uma sessão ativa.</p>
+        <p>Confira o canal selecionado, a segurança do recebimento e a sessão usada pelo inbox.</p>
       </div>
 
       <div class="connection-grid">
@@ -335,19 +337,24 @@
           <p>Use o modo teste para validar o painel sem enviar mensagens reais.</p>
         </article>
         <article>
-          <span>Token e número</span>
-          <strong>{{ "Prontos" if official_ready else "Pendentes" }}</strong>
-          <p>São os dados da conta oficial do WhatsApp Business.</p>
+          <span>Provedor atual</span>
+          <strong>{{ whatsapp_provider_label }}</strong>
+          <p>Canal usado pelo painel para enviar e receber mensagens.</p>
         </article>
         <article>
-          <span>Primeiro contato</span>
-          <strong>{{ "Definido" if template_set else "Pendente" }}</strong>
-          <p>Necessário para iniciar conversa fora da janela permitida pelo WhatsApp.</p>
+          <span>Configuração</span>
+          <strong>{{ "Pronta" if connection_ready else "Pendente" }}</strong>
+          <p>{% if whatsapp_provider == "evolution" %}URL, chave da API e token do webhook.{% elif whatsapp_provider == "qr" %}Ponte local e token privado.{% else %}Token e número da conta oficial.{% endif %}</p>
         </article>
         <article>
-          <span>Conferência</span>
-          <strong>{{ "Definida" if verify_token_set else "Pendente" }}</strong>
-          <p>Usada pela Meta para confirmar que este site recebe mensagens.</p>
+          <span>Respostas automáticas</span>
+          <strong>{{ "Ativas" if whatsapp_auto_reply else "Desativadas" }}</strong>
+          <p>O atendimento manual continua disponível mesmo com a automação desligada.</p>
+        </article>
+        <article>
+          <span>Proteção do webhook</span>
+          <strong>{{ "Definida" if webhook_guard_ready else "Pendente" }}</strong>
+          <p>Impede que origens não autorizadas criem mensagens no inbox.</p>
         </article>
         <article>
           <span>Fila de recebimento</span>
@@ -358,26 +365,28 @@
 
       <section class="qr-connection-card" data-whatsapp-qr aria-labelledby="qr-connection-title">
         <div class="qr-connection-copy">
-          <p class="eyebrow">Conexão por QR</p>
-          <h3 id="qr-connection-title">Vincular WhatsApp Web</h3>
+          <p class="eyebrow">Conexão do WhatsApp</p>
+          <h3 id="qr-connection-title">{% if whatsapp_provider == "evolution" %}Vincular pela Evolution API{% else %}Vincular WhatsApp Web{% endif %}</h3>
           <p data-qr-description>
-            {% if whatsapp_provider != "qr" %}
-              Ative <code>WHATSAPP_PROVIDER=qr</code> e desative o modo teste para vincular este canal.
+            {% if whatsapp_provider not in ["qr", "evolution"] %}
+              Ative <code>WHATSAPP_PROVIDER=evolution</code> e desative o modo teste para vincular este canal.
             {% elif dry_run %}
               O modo teste está ativo. Defina <code>WHATSAPP_DRY_RUN=0</code> e reinicie o serviço para gerar um QR real.
+            {% elif whatsapp_provider == "evolution" %}
+              Gere o QR e leia-o no WhatsApp do telefone que será usado no atendimento. A Evolution encaminhará novas mensagens para este inbox.
             {% else %}
               Gere o QR e leia-o pelo WhatsApp do telefone que será usado no atendimento.
             {% endif %}
           </p>
           <dl class="qr-connection-meta">
-            <div><dt>Status</dt><dd data-qr-status>{% if whatsapp_provider == "qr" and not dry_run %}Verificando conexão...{% else %}Configuração pendente{% endif %}</dd></div>
+            <div><dt>Status</dt><dd data-qr-status>{% if whatsapp_provider in ["qr", "evolution"] and not dry_run %}Verificando conexão...{% else %}Configuração pendente{% endif %}</dd></div>
             <div><dt>Número vinculado</dt><dd data-qr-number>—</dd></div>
             <div><dt>Última conexão</dt><dd data-qr-connected>—</dd></div>
           </dl>
           <div class="qr-connection-actions">
-            <button type="button" data-qr-connect{% if whatsapp_provider != "qr" or dry_run %} disabled aria-disabled="true"{% endif %}>Gerar QR</button>
+            <button type="button" data-qr-connect{% if whatsapp_provider not in ["qr", "evolution"] or dry_run %} disabled aria-disabled="true"{% endif %}>Gerar QR</button>
             <button type="button" data-qr-refresh class="is-secondary">Atualizar</button>
-            <button type="button" data-qr-reset class="is-secondary"{% if whatsapp_provider != "qr" or dry_run %} disabled aria-disabled="true"{% endif %}>Desconectar</button>
+            <button type="button" data-qr-reset class="is-secondary"{% if whatsapp_provider not in ["qr", "evolution"] or dry_run %} disabled aria-disabled="true"{% endif %}>Desconectar</button>
           </div>
           <p class="qr-connection-note" data-qr-note aria-live="polite"></p>
         </div>

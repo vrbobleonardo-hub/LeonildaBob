@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -43,9 +44,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import db  # noqa: E402
-from app.main import app, dispatch_pending_webhooks, templates as jinja_templates  # noqa: E402
+from app import whatsapp_evolution  # noqa: E402
+from app.main import app, dispatch_pending_webhooks, is_whatsapp_opt_out_request, templates as jinja_templates  # noqa: E402
 from app.settings import env_bool, settings  # noqa: E402
 from app.whatsapp import trusted_meta_media_url  # noqa: E402
+from app.whatsapp_evolution import evolution_inbound_messages, evolution_session_action  # noqa: E402
 
 
 def expect(condition: bool, message: str) -> None:
@@ -65,6 +68,38 @@ def meta_value(html: str, name: str) -> str:
     if not match:
         raise AssertionError(f"Meta ausente: {name}")
     return match.group(1)
+
+
+class FakeEvolutionResponse:
+    def __init__(self, data: dict[str, object], status_code: int = 200) -> None:
+        self.status_code = status_code
+        self._data = data
+        self.content = json.dumps(data).encode("utf-8")
+        self.text = self.content.decode("utf-8")
+
+    def json(self) -> dict[str, object]:
+        return self._data
+
+
+class FakeEvolutionHttp:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+        self.connection_state_requests = 0
+
+    def request(self, method: str, url: str, **_kwargs: object) -> FakeEvolutionResponse:
+        self.calls.append((method, url))
+        if "/instance/connectionState/" in url:
+            self.connection_state_requests += 1
+            if self.connection_state_requests == 1:
+                return FakeEvolutionResponse({"error": True, "message": "Instance not found"})
+            return FakeEvolutionResponse({"instance": {"state": "close"}})
+        if "/instance/create" in url:
+            return FakeEvolutionResponse({"instance": {"instanceName": "bob-advogados"}})
+        if "/webhook/set/" in url:
+            return FakeEvolutionResponse({"webhook": {"enabled": True}})
+        if "/instance/connect/" in url:
+            return FakeEvolutionResponse({"base64": "A" * 300})
+        raise AssertionError(f"Rota Evolution inesperada: {method} {url}")
 
 
 class MarkupAudit(HTMLParser):
@@ -149,6 +184,114 @@ def main() -> None:
         not trusted_meta_media_url("https://evil.example/media?id=1"),
         "Host externo de mídia aceito",
     )
+    evolution_messages = evolution_inbound_messages(
+        {
+            "event": "messages.upsert",
+            "data": {
+                "key": {"id": "evolution-smoke-1", "remoteJid": "5511999999999@s.whatsapp.net"},
+                "pushName": "Contato teste",
+                "message": {"extendedTextMessage": {"text": "Olá pelo Evolution"}},
+            },
+        }
+    )
+    expect(len(evolution_messages) == 1, "Evento Evolution válido não foi interpretado")
+    expect(evolution_messages[0]["phone"] == "5511999999999", "Telefone Evolution inválido")
+    expect(evolution_messages[0]["text"] == "Olá pelo Evolution", "Texto Evolution inválido")
+    tiny_png = base64.b64encode(
+        b"\x89PNG\r\n\x1a\n" + b"evolution-media-smoke"
+    ).decode("ascii")
+    evolution_media_messages = evolution_inbound_messages(
+        {
+            "event": "MESSAGES_UPSERT",
+            "data": {
+                "key": {"id": "evolution-smoke-media", "remoteJid": "5511977776666@s.whatsapp.net"},
+                "message": {
+                    "imageMessage": {"caption": "Comprovante", "mimetype": "image/png"},
+                    "base64": tiny_png,
+                },
+            },
+        }
+    )
+    expect(len(evolution_media_messages) == 1, "Mídia Evolution não foi interpretada")
+    expect(evolution_media_messages[0]["message_type"] == "image", "Tipo de mídia Evolution inválido")
+    expect(evolution_media_messages[0]["media_mime"] == "image/png", "MIME Evolution inválido")
+    expect(evolution_media_messages[0]["media_base64"] == tiny_png, "Base64 Evolution ausente")
+    evolution_lid_messages = evolution_inbound_messages(
+        {
+            "event": "messages.upsert",
+            "data": {
+                "key": {
+                    "id": "evolution-smoke-lid",
+                    "remoteJid": "123456789@lid",
+                    "remoteJidAlt": "5511988887777@s.whatsapp.net",
+                },
+                "pushName": "Contato LID",
+                "message": {"conversation": "Mensagem com número alternativo"},
+            },
+        }
+    )
+    expect(len(evolution_lid_messages) == 1, "Evento Evolution com LID não foi interpretado")
+    expect(evolution_lid_messages[0]["phone"] == "5511988887777", "LID não foi convertido para telefone")
+    expect(
+        not evolution_inbound_messages(
+            {
+                "event": "messages.upsert",
+                "data": {
+                    "key": {"id": "evolution-smoke-lid-only", "remoteJid": "123456789@lid"},
+                    "message": {"conversation": "LID sem telefone"},
+                },
+            }
+        ),
+        "LID sem número alternativo entrou no inbox",
+    )
+    expect(
+        not evolution_inbound_messages(
+            {
+                "event": "messages.upsert",
+                "data": {
+                    "key": {"id": "evolution-smoke-2", "remoteJid": "5511999999999@s.whatsapp.net", "fromMe": True},
+                    "message": {"conversation": "Mensagem própria"},
+                },
+            }
+        ),
+        "Mensagem própria da Evolution entrou no inbox",
+    )
+    expect(is_whatsapp_opt_out_request(" PARAR "), "Gatilho de opt-out não reconhecido")
+    expect(is_whatsapp_opt_out_request("remover"), "Variação de opt-out não reconhecida")
+    expect(not is_whatsapp_opt_out_request("quero parar de trabalhar"), "Texto comum bloqueado como opt-out")
+    evolution_values = {
+        key: getattr(settings, key)
+        for key in (
+            "whatsapp_provider",
+            "whatsapp_dry_run",
+            "evolution_api_url",
+            "evolution_api_key",
+            "evolution_webhook_token",
+        )
+    }
+    original_evolution_http = whatsapp_evolution.HTTP
+    fake_evolution_http = FakeEvolutionHttp()
+    try:
+        settings.whatsapp_provider = "evolution"
+        settings.whatsapp_dry_run = False
+        settings.evolution_api_url = "https://evolution.test"
+        settings.evolution_api_key = "smoke-evolution-key"
+        settings.evolution_webhook_token = "smoke-evolution-webhook-token"
+        whatsapp_evolution.HTTP = fake_evolution_http
+        evolution_session = evolution_session_action("connect")
+        expect(evolution_session["session"]["status"] == "qr", "QR da Evolution não foi disponibilizado")
+        expect(
+            str(evolution_session["session"]["qr_data_url"]).startswith("data:image/png;base64,"),
+            "QR da Evolution sem imagem base64",
+        )
+        paths = "\n".join(url for _method, url in fake_evolution_http.calls)
+        expect("/instance/create" in paths, "Instância Evolution inexistente não foi criada")
+        expect("/webhook/set/" in paths, "Webhook Evolution não foi registrado")
+        expect("/instance/connect/" in paths, "Conexão Evolution não solicitou QR")
+    finally:
+        whatsapp_evolution.HTTP = original_evolution_http
+        for key, value in evolution_values.items():
+            setattr(settings, key, value)
 
     try:
         for template_path in Path("templates").rglob("*.html"):
@@ -336,6 +479,80 @@ def main() -> None:
                 json={"phone": "5511994926810", "text": "Teste QR"},
             )
             expect(qr_inbound_disabled.status_code == 409, "Webhook QR aceito sem provedor QR")
+
+            evolution_runtime_values = {
+                "whatsapp_provider": settings.whatsapp_provider,
+                "whatsapp_dry_run": settings.whatsapp_dry_run,
+                "evolution_webhook_token": settings.evolution_webhook_token,
+                "whatsapp_auto_reply": settings.whatsapp_auto_reply,
+            }
+            try:
+                settings.whatsapp_provider = "evolution"
+                settings.whatsapp_dry_run = False
+                settings.evolution_webhook_token = "smoke-evolution-webhook-token"
+                settings.whatsapp_auto_reply = False
+                evolution_webhook_payload = {
+                    "event": "MESSAGES_UPSERT",
+                    "data": {
+                        "key": {
+                            "id": "evolution-smoke-webhook-media",
+                            "remoteJid": "5511977776666@s.whatsapp.net",
+                        },
+                        "pushName": "Contato com mídia",
+                        "message": {
+                            "imageMessage": {"caption": "Comprovante", "mimetype": "image/png"},
+                            "base64": tiny_png,
+                        },
+                    },
+                }
+                unauthorized_evolution = client.post(
+                    "/api/webhooks/whatsapp/evolution",
+                    json=evolution_webhook_payload,
+                )
+                expect(unauthorized_evolution.status_code == 403, "Webhook Evolution aceitou token inválido")
+                evolution_webhook = client.post(
+                    "/api/webhooks/whatsapp/evolution",
+                    headers={"X-Evolution-Webhook-Token": "smoke-evolution-webhook-token"},
+                    json=evolution_webhook_payload,
+                )
+                expect(evolution_webhook.status_code == 200, evolution_webhook.text)
+                expect(evolution_webhook.json().get("recorded") == 1, "Webhook Evolution não gravou mídia")
+                duplicate_evolution = client.post(
+                    "/api/webhooks/whatsapp/evolution",
+                    headers={"X-Evolution-Webhook-Token": "smoke-evolution-webhook-token"},
+                    json=evolution_webhook_payload,
+                )
+                expect(duplicate_evolution.json().get("duplicate") == 1, "Webhook Evolution duplicou mídia")
+                with db.connect() as connection:
+                    evolution_media_row = connection.execute(
+                        """
+                        SELECT media_url, media_mime, media_name, media_size, raw_payload
+                        FROM whatsapp_messages
+                        WHERE provider_message_id = ?
+                        """,
+                        ("evolution-smoke-webhook-media",),
+                    ).fetchone()
+                expect(evolution_media_row is not None, "Mídia Evolution não chegou ao inbox")
+                expect(bool(evolution_media_row["media_url"]), "Mídia Evolution não recebeu URL privada")
+                expect(evolution_media_row["media_mime"] == "image/png", "MIME da mídia não foi persistido")
+                expect("base64" not in evolution_media_row["raw_payload"], "Base64 foi persistido no banco")
+                with db.connect() as connection:
+                    media_conversation = connection.execute(
+                        "SELECT id FROM whatsapp_conversations WHERE phone = ?",
+                        ("5511977776666",),
+                    ).fetchone()
+                    if media_conversation:
+                        connection.execute(
+                            "DELETE FROM whatsapp_messages WHERE conversation_id = ?",
+                            (media_conversation["id"],),
+                        )
+                        connection.execute(
+                            "DELETE FROM whatsapp_conversations WHERE id = ?",
+                            (media_conversation["id"],),
+                        )
+            finally:
+                for key, value in evolution_runtime_values.items():
+                    setattr(settings, key, value)
 
             empty_blog_admin = client.get("/admin/artigos")
             expect(empty_blog_admin.status_code == 200, empty_blog_admin.text)
@@ -562,6 +779,35 @@ def main() -> None:
             media_response = client.get(media_url)
             expect(media_response.status_code == 200 and media_response.content == b"conteudo", "Mídia privada")
             expect(client.get("/static/uploads/whatsapp/teste.txt").status_code == 404, "Upload público")
+
+            with db.connect() as connection:
+                connection.execute(
+                    """
+                    UPDATE whatsapp_outbox
+                    SET status = 'pending', next_attempt_at = ?
+                    WHERE id = (
+                        SELECT id FROM whatsapp_outbox
+                        WHERE recipient = ?
+                        ORDER BY id DESC LIMIT 1
+                    )
+                    """,
+                    (db.utc_now(), "5511987654321"),
+                )
+            db.set_whatsapp_opt_out("5511987654321", source="smoke", reason="PARAR")
+            expect(db.is_whatsapp_opted_out("5511987654321"), "Preferência de opt-out não persistida")
+            with db.connect() as connection:
+                suppressed = connection.execute(
+                    "SELECT status, next_attempt_at FROM whatsapp_outbox WHERE recipient = ? ORDER BY id DESC LIMIT 1",
+                    ("5511987654321",),
+                ).fetchone()
+            expect(suppressed["status"] == "suppressed", "Fila pendente não foi suprimida")
+            expect(suppressed["next_attempt_at"] is None, "Fila suprimida manteve retentativa")
+            blocked_send = client.post(
+                f"/api/admin/conversations/{conversation_id}/messages",
+                data={"text": "Mensagem que não deve sair"},
+                headers=admin_headers,
+            )
+            expect(blocked_send.status_code == 409, "Contato bloqueado recebeu novo envio")
 
             controls = client.post(
                 f"/api/admin/conversations/{conversation_id}/controls",

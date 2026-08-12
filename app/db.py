@@ -69,6 +69,14 @@ CREATE TABLE IF NOT EXISTS whatsapp_outbox (
     next_attempt_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS whatsapp_contact_preferences (
+    phone TEXT PRIMARY KEY,
+    opted_out_at TEXT NOT NULL,
+    source TEXT NOT NULL,
+    reason TEXT,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS whatsapp_conversations (
     id BIGSERIAL PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -174,6 +182,7 @@ CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at);
 CREATE INDEX IF NOT EXISTS idx_leads_kind ON leads(kind);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_request_key ON leads(request_key) WHERE request_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_outbox_status ON whatsapp_outbox(status);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_preferences_opted_out ON whatsapp_contact_preferences(opted_out_at DESC);
 CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(path);
 CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON page_views(created_at);
 CREATE INDEX IF NOT EXISTS idx_page_views_visitor ON page_views(visitor_id, session_id);
@@ -225,7 +234,12 @@ class ConnectionAdapter:
         table = insert_match.group(1).lower() if insert_match else ""
         returns_id = bool(
             table
-            and table not in {"admin_sessions", "schema_migrations", "whatsapp_qr_auth_store"}
+            and table not in {
+                "admin_sessions",
+                "schema_migrations",
+                "whatsapp_contact_preferences",
+                "whatsapp_qr_auth_store",
+            }
             and " RETURNING " not in sql.upper()
         )
         if returns_id:
@@ -394,6 +408,14 @@ def init_db() -> None:
                 FOREIGN KEY (lead_id) REFERENCES leads(id)
             );
 
+            CREATE TABLE IF NOT EXISTS whatsapp_contact_preferences (
+                phone TEXT PRIMARY KEY,
+                opted_out_at TEXT NOT NULL,
+                source TEXT NOT NULL,
+                reason TEXT,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS whatsapp_conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at TEXT NOT NULL,
@@ -500,6 +522,7 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at);
             CREATE INDEX IF NOT EXISTS idx_leads_kind ON leads(kind);
             CREATE INDEX IF NOT EXISTS idx_outbox_status ON whatsapp_outbox(status);
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_preferences_opted_out ON whatsapp_contact_preferences(opted_out_at DESC);
             CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(path);
             CREATE INDEX IF NOT EXISTS idx_whatsapp_conversations_phone ON whatsapp_conversations(phone);
             CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_conversation ON whatsapp_messages(conversation_id, created_at);
@@ -1027,6 +1050,56 @@ def record_whatsapp_message(
         return int(cursor.lastrowid)
 
 
+def set_whatsapp_opt_out(phone: str, *, source: str, reason: str = "PARAR") -> int:
+    """Persist a contact's request not to receive WhatsApp messages and stop pending sends."""
+    normalized_phone = str(phone or "").strip()
+    if not normalized_phone:
+        raise ValueError("Telefone obrigatório para interromper mensagens.")
+    now = utc_now()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO whatsapp_contact_preferences(phone, opted_out_at, source, reason, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(phone) DO UPDATE SET
+                opted_out_at = excluded.opted_out_at,
+                source = excluded.source,
+                reason = excluded.reason,
+                updated_at = excluded.updated_at
+            """,
+            (normalized_phone, now, source[:80] or "inbound", reason[:160] or "PARAR", now),
+        )
+        conn.execute(
+            """
+            UPDATE whatsapp_conversations
+            SET status = 'closed', bot_enabled = 0, updated_at = ?
+            WHERE phone = ?
+            """,
+            (now, normalized_phone),
+        )
+        cancelled = conn.execute(
+            """
+            UPDATE whatsapp_outbox
+            SET status = 'suppressed', last_error = ?, next_attempt_at = NULL
+            WHERE recipient = ? AND status = 'pending'
+            """,
+            ("Contato solicitou não receber mensagens pelo WhatsApp.", normalized_phone),
+        )
+        return max(0, cancelled.rowcount)
+
+
+def is_whatsapp_opted_out(phone: str) -> bool:
+    normalized_phone = str(phone or "").strip()
+    if not normalized_phone:
+        return False
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT phone FROM whatsapp_contact_preferences WHERE phone = ?",
+            (normalized_phone,),
+        ).fetchone()
+        return bool(row)
+
+
 def whatsapp_message_exists(provider_message_id: str) -> bool:
     if not provider_message_id:
         return False
@@ -1146,6 +1219,18 @@ def mark_outbox_failed(outbox_id: int, error: str) -> None:
             WHERE id = ?
             """,
             (attempts, error[:500], next_attempt, outbox_id),
+        )
+
+
+def mark_outbox_suppressed(outbox_id: int, reason: str = "Contato solicitou não receber mensagens pelo WhatsApp.") -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE whatsapp_outbox
+            SET status = 'suppressed', last_error = ?, next_attempt_at = NULL
+            WHERE id = ?
+            """,
+            (reason[:500], outbox_id),
         )
 
 
@@ -1629,6 +1714,7 @@ def list_expired_contact_phones() -> list[str]:
 def delete_contact_data(phone: str) -> dict[str, Any]:
     """Delete one contact's cases, messages and lead history for a verified privacy request."""
     with connect() as conn:
+        conn.execute("DELETE FROM whatsapp_contact_preferences WHERE phone = ?", (phone,))
         lead_rows = conn.execute("SELECT id FROM leads WHERE phone = ?", (phone,)).fetchall()
         lead_ids = [int(row["id"]) for row in lead_rows]
         conversation_rows = conn.execute(
@@ -1917,4 +2003,3 @@ def restore_qr_auth_files(auth_dir: str) -> int:
         except Exception:
             continue
     return restored
-

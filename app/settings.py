@@ -136,6 +136,15 @@ class Settings:
         ).rstrip("/")
         self.whatsapp_qr_bridge_token = os.getenv("WHATSAPP_QR_BRIDGE_TOKEN", "").strip()
         self.whatsapp_qr_bridge_autostart = env_bool("WHATSAPP_QR_BRIDGE_AUTOSTART", True)
+        # Evolution API runs as a separate service. Its API key never reaches
+        # the browser; the site uses it only for server-to-server requests.
+        self.evolution_api_url = os.getenv("EVOLUTION_API_URL", "").strip().rstrip("/")
+        self.evolution_api_key = os.getenv("EVOLUTION_API_KEY", "").strip()
+        self.evolution_instance = os.getenv("EVOLUTION_INSTANCE", "bob-advogados").strip()
+        self.evolution_webhook_token = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "").strip()
+        self.evolution_request_timeout_seconds = env_int(
+            "EVOLUTION_REQUEST_TIMEOUT_SECONDS", 20, minimum=5, maximum=120
+        )
         self.whatsapp_dry_run = env_bool("WHATSAPP_DRY_RUN", True)
 
         self.metrics_salt = os.getenv("METRICS_SALT", "local-development-salt")
@@ -176,8 +185,8 @@ class Settings:
             )
             if not password_hash or not 100_000 <= int(password_hash.group(1)) <= 1_500_000:
                 raise RuntimeError("ADMIN_PASSWORD_HASH possui formato inválido.")
-        if self.whatsapp_provider not in {"official", "qr"}:
-            raise RuntimeError("WHATSAPP_PROVIDER deve ser official ou qr.")
+        if self.whatsapp_provider not in {"official", "qr", "evolution"}:
+            raise RuntimeError("WHATSAPP_PROVIDER deve ser official, qr ou evolution.")
         qr_bridge = urlparse(self.whatsapp_qr_bridge_url)
         if self.whatsapp_provider == "qr" and (
             qr_bridge.scheme not in {"http", "https"} or not qr_bridge.netloc
@@ -185,6 +194,21 @@ class Settings:
             raise RuntimeError("WHATSAPP_QR_BRIDGE_URL deve ser uma URL HTTP absoluta.")
         if self.whatsapp_provider == "qr" and self.is_production and not self.whatsapp_qr_bridge_token:
             raise RuntimeError("WHATSAPP_QR_BRIDGE_TOKEN deve ser configurado em produção com QR.")
+        evolution_url = urlparse(self.evolution_api_url) if self.evolution_api_url else None
+        if self.whatsapp_provider == "evolution" and not self.whatsapp_dry_run and (
+            not evolution_url
+            or evolution_url.scheme not in {"http", "https"}
+            or not evolution_url.netloc
+            or evolution_url.username
+            or evolution_url.password
+        ):
+            raise RuntimeError("EVOLUTION_API_URL deve ser uma URL HTTP absoluta sem credenciais.")
+        if self.whatsapp_provider == "evolution" and not self.evolution_instance:
+            raise RuntimeError("EVOLUTION_INSTANCE deve ser configurada.")
+        if self.whatsapp_provider == "evolution" and not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9_-]{1,79}", self.evolution_instance
+        ):
+            raise RuntimeError("EVOLUTION_INSTANCE possui formato inválido.")
         if self.database_url and not self.database_url.startswith(("postgresql://", "postgres://")):
             raise RuntimeError("DATABASE_URL deve apontar para PostgreSQL.")
         if self.db_pool_min_size > self.db_pool_max_size:
@@ -268,6 +292,13 @@ class Settings:
                     errors.append("template de primeiro contato está ausente")
                 elif not re.fullmatch(r"[a-z0-9_]{1,512}", self.whatsapp_first_contact_template):
                     errors.append("WHATSAPP_FIRST_CONTACT_TEMPLATE possui formato inválido")
+            if not self.whatsapp_dry_run and self.whatsapp_provider == "evolution":
+                if not self.evolution_api_key:
+                    errors.append("EVOLUTION_API_KEY deve ser configurada")
+                if not self.evolution_webhook_token or len(self.evolution_webhook_token) < 24:
+                    errors.append("EVOLUTION_WEBHOOK_TOKEN deve ter ao menos 24 caracteres")
+                if evolution_url and evolution_url.scheme != "https":
+                    errors.append("EVOLUTION_API_URL deve usar HTTPS em produção")
             if errors:
                 raise RuntimeError("Configuração de produção inválida: " + "; ".join(errors) + ".")
 

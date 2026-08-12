@@ -147,6 +147,37 @@ Use uma chave diferente para cada ambiente e mantenha-a apenas nas variáveis do
 
 O fluxo do QR é deliberadamente conservador: o histórico não é reprocessado, respostas automáticas começam desligadas, a fila do site entrega um primeiro contato por vez e a ponte recusa envios em sequência rápida. Só serão enviados primeiros contatos de formulários com autorização explícita. Para atendimento em escala ou retomadas fora de uma conversa ativa, prefira a API oficial da Meta com templates aprovados.
 
+### Evolution API
+
+A Evolution API pode substituir o bridge QR deste projeto como serviço separado para administrar a instância, exibir o QR, encaminhar novas mensagens ao inbox e enviar textos e arquivos pelo painel. O site não guarda a sessão do WhatsApp e nem a chave da Evolution no navegador.
+
+> A conexão por QR da Evolution usa WhatsApp Web. Ela melhora a operação da sessão, mas não transforma esse modo em canal oficial da Meta. Para o menor risco de conta e para contatos fora da janela de 24 horas, mantenha a API oficial da Meta com templates aprovados.
+
+1. Publique uma instância da Evolution API em um serviço separado, com banco PostgreSQL e Redis persistentes conforme a documentação da Evolution.
+2. Crie uma chave forte no serviço da Evolution e um token aleatório exclusivo para o webhook deste site.
+3. No serviço **Leonilda Bob** do Render, configure:
+
+```env
+WHATSAPP_PROVIDER="evolution"
+WHATSAPP_DRY_RUN="0"
+EVOLUTION_API_URL="https://SEU-SERVICO-EVOLUTION.exemplo.com"
+EVOLUTION_API_KEY="chave-da-evolution"
+EVOLUTION_INSTANCE="bob-advogados"
+EVOLUTION_WEBHOOK_TOKEN="token-longo-e-exclusivo"
+```
+
+4. Faça o deploy, entre em `/admin` e use **Gerar QR**. O site cria ou reutiliza a instância `bob-advogados`, registra automaticamente o webhook abaixo e exibe o QR retornado pela Evolution:
+
+```text
+https://seu-dominio.com/api/webhooks/whatsapp/evolution
+```
+
+Não exponha `EVOLUTION_API_KEY` nem `EVOLUTION_WEBHOOK_TOKEN` no GitHub, em capturas de tela ou no frontend. O webhook aceita somente o cabeçalho interno configurado pelo site e ignora mensagens de grupos, mensagens enviadas pelo próprio número e identificadores repetidos.
+
+Fixe a versão estável `2.3.7` da Evolution em vez de usar a tag `latest`. Este conector foi conferido contra os contratos HTTP dessa versão. Não use uma versão `2.4` release candidate em produção sem validar previamente a compatibilidade e os requisitos de ativação anunciados pelo projeto.
+
+As palavras `PARAR`, `SAIR`, `STOP`, `CANCELAR` e `REMOVER`, quando recebidas isoladamente, registram imediatamente a interrupção do contato, fecham a conversa automática e suprimem mensagens pendentes. Novos envios pelo painel também são bloqueados até que haja uma nova base de consentimento tratada fora do fluxo automático.
+
 ## Testes
 
 ```bash
