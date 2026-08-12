@@ -46,7 +46,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app import db  # noqa: E402
 from app import whatsapp_evolution  # noqa: E402
 from app.main import app, dispatch_pending_webhooks, is_whatsapp_opt_out_request, templates as jinja_templates  # noqa: E402
-from app.settings import env_bool, settings  # noqa: E402
+from app.settings import Settings, env_bool, settings  # noqa: E402
 from app.whatsapp import trusted_meta_media_url  # noqa: E402
 from app.whatsapp_evolution import evolution_inbound_messages, evolution_session_action  # noqa: E402
 
@@ -176,6 +176,43 @@ def main() -> None:
         raise AssertionError("Booleano inválido aceito silenciosamente")
     finally:
         os.environ.pop("SMOKE_INVALID_BOOL", None)
+    private_network_keys = {
+        key: os.environ.get(key)
+        for key in (
+            "WHATSAPP_PROVIDER",
+            "WHATSAPP_DRY_RUN",
+            "EVOLUTION_API_URL",
+            "EVOLUTION_API_INTERNAL_HOSTPORT",
+            "EVOLUTION_API_KEY",
+            "EVOLUTION_WEBHOOK_TOKEN",
+        )
+    }
+    try:
+        os.environ.update(
+            {
+                "WHATSAPP_PROVIDER": "evolution",
+                "WHATSAPP_DRY_RUN": "0",
+                "EVOLUTION_API_URL": "https://evolution-public.example",
+                "EVOLUTION_API_INTERNAL_HOSTPORT": "evolution-private:10000",
+                "EVOLUTION_API_KEY": "smoke-evolution-key",
+                "EVOLUTION_WEBHOOK_TOKEN": "smoke-evolution-webhook-token",
+            }
+        )
+        private_settings = Settings()
+        expect(
+            private_settings.evolution_api_url == "http://evolution-private:10000",
+            "Evolution não priorizou a rede privada do Render",
+        )
+        expect(
+            private_settings.evolution_api_uses_private_network,
+            "Evolution não identificou a rede privada do Render",
+        )
+    finally:
+        for key, value in private_network_keys.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
     expect(
         trusted_meta_media_url("https://lookaside.fbsbx.com/whatsapp_business/attachments?id=1"),
         "Host oficial de mídia rejeitado",

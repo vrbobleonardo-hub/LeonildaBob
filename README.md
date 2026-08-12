@@ -153,9 +153,17 @@ A Evolution API pode substituir o bridge QR deste projeto como serviço separado
 
 > A conexão por QR da Evolution usa WhatsApp Web. Ela melhora a operação da sessão, mas não transforma esse modo em canal oficial da Meta. Para o menor risco de conta e para contatos fora da janela de 24 horas, mantenha a API oficial da Meta com templates aprovados.
 
-1. Publique uma instância da Evolution API em um serviço separado, com banco PostgreSQL e Redis persistentes conforme a documentação da Evolution.
-2. Crie uma chave forte no serviço da Evolution e um token aleatório exclusivo para o webhook deste site.
-3. No serviço **Leonilda Bob** do Render, configure:
+O `render.yaml` já prepara a implantação sem duplicar o serviço pago existente:
+
+- o serviço `leonilda-bob-whatsapp-qr` passa a executar a Evolution API `2.3.7`;
+- o PostgreSQL já configurado no site é reutilizado com o schema isolado `evolution_api`;
+- a chave da Evolution e o token do webhook são gerados pelo Render e compartilhados apenas entre os serviços;
+- o site acessa a Evolution pela rede privada do Render, sem publicar a chave no navegador;
+- o cache local atende esta instalação de uma única instância. Para múltiplas instâncias ou réplicas, adicione Redis persistente antes de escalar.
+
+No primeiro uso, abra **Blueprints** no Render e sincronize este `render.yaml`. Confirme a atualização dos dois serviços existentes e faça o deploy. Depois, entre em `/admin`, abra **Conexão** e use **Gerar QR**.
+
+Para configurar uma Evolution externa em vez do serviço do Blueprint, remova `EVOLUTION_API_INTERNAL_HOSTPORT` e defina manualmente no serviço **Leonilda Bob**:
 
 ```env
 WHATSAPP_PROVIDER="evolution"
@@ -166,7 +174,7 @@ EVOLUTION_INSTANCE="bob-advogados"
 EVOLUTION_WEBHOOK_TOKEN="token-longo-e-exclusivo"
 ```
 
-4. Faça o deploy, entre em `/admin` e use **Gerar QR**. O site cria ou reutiliza a instância `bob-advogados`, registra automaticamente o webhook abaixo e exibe o QR retornado pela Evolution:
+O site cria ou reutiliza a instância `bob-advogados`, registra automaticamente o webhook abaixo e exibe o QR retornado pela Evolution:
 
 ```text
 https://seu-dominio.com/api/webhooks/whatsapp/evolution
@@ -174,7 +182,7 @@ https://seu-dominio.com/api/webhooks/whatsapp/evolution
 
 Não exponha `EVOLUTION_API_KEY` nem `EVOLUTION_WEBHOOK_TOKEN` no GitHub, em capturas de tela ou no frontend. O webhook aceita somente o cabeçalho interno configurado pelo site e ignora mensagens de grupos, mensagens enviadas pelo próprio número e identificadores repetidos.
 
-Fixe a versão estável `2.3.7` da Evolution em vez de usar a tag `latest`. Este conector foi conferido contra os contratos HTTP dessa versão. Não use uma versão `2.4` release candidate em produção sem validar previamente a compatibilidade e os requisitos de ativação anunciados pelo projeto.
+A imagem está fixada em `evoapicloud/evolution-api:v2.3.7`, sem usar a tag mutável `latest`. Este conector foi conferido contra os contratos HTTP dessa versão. Não use uma versão `2.4` release candidate em produção sem validar previamente a compatibilidade e os requisitos de ativação anunciados pelo projeto.
 
 As palavras `PARAR`, `SAIR`, `STOP`, `CANCELAR` e `REMOVER`, quando recebidas isoladamente, registram imediatamente a interrupção do contato, fecham a conversa automática e suprimem mensagens pendentes. Novos envios pelo painel também são bloqueados até que haja uma nova base de consentimento tratada fora do fluxo automático.
 

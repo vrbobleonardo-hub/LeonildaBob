@@ -1,0 +1,6 @@
+FROM evoapicloud/evolution-api:v2.3.7
+
+COPY scripts/evolution_render_entrypoint.sh /usr/local/bin/evolution-render-entrypoint
+RUN chmod 0755 /usr/local/bin/evolution-render-entrypoint
+
+ENTRYPOINT ["/usr/local/bin/evolution-render-entrypoint"]

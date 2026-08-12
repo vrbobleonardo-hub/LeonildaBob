@@ -37,7 +37,7 @@ services:
       - key: METRICS_SALT
         generateValue: true
       - key: WHATSAPP_PROVIDER
-        value: qr
+        value: evolution
       - key: WHATSAPP_DRY_RUN
         value: "0"
       - key: WHATSAPP_AUTO_REPLY
@@ -52,12 +52,20 @@ services:
         value: "0"
       - key: EVOLUTION_API_URL
         sync: false
+      - key: EVOLUTION_API_INTERNAL_HOSTPORT
+        fromService:
+          type: web
+          name: leonilda-bob-whatsapp-qr
+          property: hostport
       - key: EVOLUTION_API_KEY
-        sync: false
+        fromService:
+          type: web
+          name: leonilda-bob-whatsapp-qr
+          envVarKey: AUTHENTICATION_API_KEY
       - key: EVOLUTION_INSTANCE
         value: bob-advogados
       - key: EVOLUTION_WEBHOOK_TOKEN
-        sync: false
+        generateValue: true
       - key: EVOLUTION_REQUEST_TIMEOUT_SECONDS
         value: "20"
       - key: WHATSAPP_ACCESS_TOKEN
@@ -78,23 +86,72 @@ services:
     runtime: docker
     plan: starter
     region: virginia
-    dockerfilePath: ./Dockerfile.whatsapp-qr
+    dockerfilePath: ./Dockerfile.evolution
     dockerContext: .
-    healthCheckPath: /healthz
+    healthCheckPath: /
     disk:
       name: whatsapp-qr-session
       mountPath: /var/data
       sizeGB: 1
     envVars:
-      - key: WHATSAPP_QR_BRIDGE_HOST
-        value: 0.0.0.0
-      - key: WHATSAPP_QR_AUTH_DIR
-        value: /var/data/whatsapp
-      - key: WHATSAPP_QR_BRIDGE_TOKEN
-        sync: false
-      - key: WHATSAPP_QR_INBOUND_URL
-        value: https://bobadvogados.com.br/api/webhooks/whatsapp/qr
-      - key: WHATSAPP_QR_SYNC_RECENT_HISTORY
-        value: "0"
-      - key: WHATSAPP_QR_OUTBOUND_MIN_INTERVAL_MS
-        value: "3500"
+      - key: SERVER_NAME
+        value: bob-advogados-evolution
+      - key: SERVER_TYPE
+        value: http
+      - key: TELEMETRY_ENABLED
+        value: "false"
+      - key: CORS_ORIGIN
+        value: https://bobadvogados.com.br
+      - key: CORS_METHODS
+        value: GET,POST,PUT,DELETE
+      - key: CORS_CREDENTIALS
+        value: "true"
+      - key: LOG_LEVEL
+        value: ERROR,WARN
+      - key: LOG_COLOR
+        value: "false"
+      - key: LOG_BAILEYS
+        value: error
+      - key: DEL_INSTANCE
+        value: "false"
+      - key: DATABASE_PROVIDER
+        value: postgresql
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: leonilda-bob
+          envVarKey: DATABASE_URL
+      - key: DATABASE_CONNECTION_CLIENT_NAME
+        value: bob_advogados_evolution
+      - key: DATABASE_SAVE_DATA_INSTANCE
+        value: "true"
+      - key: DATABASE_SAVE_DATA_NEW_MESSAGE
+        value: "true"
+      - key: DATABASE_SAVE_MESSAGE_UPDATE
+        value: "true"
+      - key: DATABASE_SAVE_DATA_CONTACTS
+        value: "true"
+      - key: DATABASE_SAVE_DATA_CHATS
+        value: "true"
+      - key: DATABASE_SAVE_DATA_LABELS
+        value: "false"
+      - key: DATABASE_SAVE_DATA_HISTORIC
+        value: "false"
+      - key: DATABASE_SAVE_IS_ON_WHATSAPP
+        value: "false"
+      - key: DATABASE_DELETE_MESSAGE
+        value: "true"
+      - key: CACHE_REDIS_ENABLED
+        value: "false"
+      - key: CACHE_LOCAL_ENABLED
+        value: "true"
+      - key: AUTHENTICATION_API_KEY
+        generateValue: true
+      - key: AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES
+        value: "false"
+      - key: CONFIG_SESSION_PHONE_CLIENT
+        value: Bob Advogados
+      - key: CONFIG_SESSION_PHONE_NAME
+        value: Chrome
+      - key: LANGUAGE
+        value: pt-BR

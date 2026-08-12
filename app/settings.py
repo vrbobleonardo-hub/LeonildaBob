@@ -138,7 +138,16 @@ class Settings:
         self.whatsapp_qr_bridge_autostart = env_bool("WHATSAPP_QR_BRIDGE_AUTOSTART", True)
         # Evolution API runs as a separate service. Its API key never reaches
         # the browser; the site uses it only for server-to-server requests.
-        self.evolution_api_url = os.getenv("EVOLUTION_API_URL", "").strip().rstrip("/")
+        evolution_api_url = os.getenv("EVOLUTION_API_URL", "").strip().rstrip("/")
+        evolution_internal_hostport = os.getenv(
+            "EVOLUTION_API_INTERNAL_HOSTPORT", ""
+        ).strip().rstrip("/")
+        self.evolution_api_uses_private_network = bool(evolution_internal_hostport)
+        self.evolution_api_url = (
+            f"http://{evolution_internal_hostport}"
+            if evolution_internal_hostport
+            else evolution_api_url
+        )
         self.evolution_api_key = os.getenv("EVOLUTION_API_KEY", "").strip()
         self.evolution_instance = os.getenv("EVOLUTION_INSTANCE", "bob-advogados").strip()
         self.evolution_webhook_token = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "").strip()
@@ -297,7 +306,11 @@ class Settings:
                     errors.append("EVOLUTION_API_KEY deve ser configurada")
                 if not self.evolution_webhook_token or len(self.evolution_webhook_token) < 24:
                     errors.append("EVOLUTION_WEBHOOK_TOKEN deve ter ao menos 24 caracteres")
-                if evolution_url and evolution_url.scheme != "https":
+                if (
+                    evolution_url
+                    and evolution_url.scheme != "https"
+                    and not self.evolution_api_uses_private_network
+                ):
                     errors.append("EVOLUTION_API_URL deve usar HTTPS em produção")
             if errors:
                 raise RuntimeError("Configuração de produção inválida: " + "; ".join(errors) + ".")
