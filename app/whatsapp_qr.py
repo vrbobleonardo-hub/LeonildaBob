@@ -25,7 +25,7 @@ def _bridge_port() -> int:
 
 
 def _bridge_url(path: str = "") -> str:
-    return f"http://127.0.0.1:{_bridge_port()}{path}"
+    return f"{settings.whatsapp_qr_bridge_url.rstrip('/')}{path}"
 
 
 def _bridge_headers() -> dict[str, str]:
@@ -99,6 +99,11 @@ def ensure_qr_bridge_running() -> dict[str, Any]:
         return data
     except (requests.RequestException, RuntimeError):
         pass
+
+    # Production uses a dedicated Render service. Never try to start a local
+    # subprocess when the configured remote bridge is unavailable.
+    if not settings.whatsapp_qr_bridge_autostart:
+        return {"ok": False, "error": "qr_bridge_unreachable"}
 
     node = shutil.which("node")
     if not node:

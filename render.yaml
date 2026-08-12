@@ -40,8 +40,16 @@ services:
         value: qr
       - key: WHATSAPP_DRY_RUN
         value: "0"
+      - key: WHATSAPP_AUTO_REPLY
+        value: "0"
+      - key: WHATSAPP_OUTBOX_MIN_INTERVAL_SECONDS
+        value: "12"
       - key: WHATSAPP_QR_BRIDGE_TOKEN
         sync: false
+      - key: WHATSAPP_QR_BRIDGE_URL
+        sync: false
+      - key: WHATSAPP_QR_BRIDGE_AUTOSTART
+        value: "0"
       - key: WHATSAPP_ACCESS_TOKEN
         sync: false
       - key: WHATSAPP_PHONE_NUMBER_ID
@@ -54,3 +62,29 @@ services:
         sync: false
       - key: META_GRAPH_VERSION
         sync: false
+
+  - type: web
+    name: leonilda-bob-whatsapp-qr
+    runtime: docker
+    plan: starter
+    region: virginia
+    dockerfilePath: ./Dockerfile.whatsapp-qr
+    dockerContext: .
+    healthCheckPath: /healthz
+    disk:
+      name: whatsapp-qr-session
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: WHATSAPP_QR_BRIDGE_HOST
+        value: 0.0.0.0
+      - key: WHATSAPP_QR_AUTH_DIR
+        value: /var/data/whatsapp
+      - key: WHATSAPP_QR_BRIDGE_TOKEN
+        sync: false
+      - key: WHATSAPP_QR_INBOUND_URL
+        value: https://bobadvogados.com.br/api/webhooks/whatsapp/qr
+      - key: WHATSAPP_QR_SYNC_RECENT_HISTORY
+        value: "0"
+      - key: WHATSAPP_QR_OUTBOUND_MIN_INTERVAL_MS
+        value: "3500"

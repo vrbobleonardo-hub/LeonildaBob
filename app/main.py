@@ -541,30 +541,42 @@ def cleanup_retention() -> None:
             db.delete_contact_data(phone)
 
 
+_last_outbox_dispatch_at = 0.0
+
+
 def dispatch_pending_outbox() -> None:
+    global _last_outbox_dispatch_at
     if settings.whatsapp_dry_run:
         return
-    for item in db.list_pending_outbox(limit=20):
-        try:
-            conversation_id = db.get_or_create_conversation(
-                item["recipient"],
-                name=item.get("name") or "",
-                kind=item.get("kind") or "",
-                source_lead_id=item.get("lead_id"),
-            )
-            result = send_whatsapp_text(
-                item["recipient"],
-                item["message"],
-                conversation_id=conversation_id,
-                first_contact=True,
-            )
-            db.mark_outbox_sent(
-                item["id"],
-                status=result.get("status", "sent"),
-                provider_message_id=result.get("provider_message_id"),
-            )
-        except Exception as exc:
-            db.mark_outbox_failed(item["id"], str(exc))
+    now = time.monotonic()
+    if now - _last_outbox_dispatch_at < settings.whatsapp_outbox_min_interval_seconds:
+        return
+    pending = db.list_pending_outbox(limit=1)
+    if not pending:
+        return
+    item = pending[0]
+    try:
+        conversation_id = db.get_or_create_conversation(
+            item["recipient"],
+            name=item.get("name") or "",
+            kind=item.get("kind") or "",
+            source_lead_id=item.get("lead_id"),
+        )
+        result = send_whatsapp_text(
+            item["recipient"],
+            item["message"],
+            conversation_id=conversation_id,
+            first_contact=True,
+        )
+        db.mark_outbox_sent(
+            item["id"],
+            status=result.get("status", "sent"),
+            provider_message_id=result.get("provider_message_id"),
+        )
+        _last_outbox_dispatch_at = time.monotonic()
+    except Exception as exc:
+        db.mark_outbox_failed(item["id"], str(exc))
+        _last_outbox_dispatch_at = time.monotonic()
 
 
 async def outbox_worker() -> None:
@@ -645,7 +657,7 @@ def bridge_logs() -> Response:
     log_path = ROOT_DIR / "data" / "whatsapp_qr_bridge.log"
     if not os.path.exists(log_path):
         return Response("No log file", media_type="text/plain")
-    with open(log_path, "r") as f:
+    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
         # Get last 100 lines
         lines = f.readlines()
         return Response("".join(lines[-100:]), media_type="text/plain")
@@ -1551,7 +1563,7 @@ def admin_send_message(
 ) -> JSONResponse:
     verify_same_origin(request)
     verify_session_csrf(request)
-    rate_limit(request, "admin-message", limit=60, window_seconds=60)
+    rate_limit(request, "admin-message", limit=20, window_seconds=60)
     conversation = db.get_conversation(conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa não encontrada.")
@@ -1902,7 +1914,7 @@ def backup_qr_auth(request: Request) -> JSONResponse:
 def receive_qr_inbound(payload: QrInboundPayload, request: Request) -> JSONResponse:
     rate_limit(request, "whatsapp-qr-inbound", limit=300, window_seconds=60)
     verify_qr_bridge_request(request)
-    if settings.whatsapp_provider != "qr":
+    if settings.whatsapp_provider != "qr" or settings.whatsapp_dry_run:
         raise HTTPException(status_code=409, detail="O provedor QR não está ativo.")
     dedup_id = payload.external_id or payload.provider_message_id or ""
     if dedup_id and db.whatsapp_message_exists(dedup_id):

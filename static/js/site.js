@@ -566,6 +566,7 @@ function initAdminChat() {
 
   function qrStatusLabel(session, enabled) {
     if (!enabled) return "Ative o provedor QR";
+    if (session?.status === "unavailable") return "Bridge QR indisponível";
     const labels = {
       connected: "Conectado",
       connecting: "Conectando",
@@ -606,6 +607,12 @@ function initAdminChat() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),
     };
+    const connectButton = app.querySelector("[data-qr-connect]");
+    const actionButton = action === "connect" ? connectButton : null;
+    if (actionButton) {
+      actionButton.disabled = true;
+      actionButton.textContent = "Gerando QR...";
+    }
     try {
       const response = await adminFetch("/api/admin/whatsapp/qr/session", options);
       const payload = await response.json();
@@ -613,6 +620,8 @@ function initAdminChat() {
       renderQrSession(payload);
     } catch (error) {
       qrNote.textContent = error.message || "Não foi possível consultar a conexão QR.";
+    } finally {
+      if (actionButton) actionButton.textContent = "Gerar QR";
     }
   }
 

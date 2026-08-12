@@ -89,7 +89,7 @@ Observação: quando o contato é iniciado pelo escritório, o WhatsApp oficial 
 
 O painel `/admin` também pode operar por uma sessão do WhatsApp Web. Ele exibe um QR para leitura no telefone, recebe mensagens no inbox e envia respostas de texto pela sessão conectada.
 
-Essa modalidade depende de uma sessão do WhatsApp Web e pode estar sujeita às regras e limitações da plataforma. Para uso institucional de longo prazo, a API oficial continua sendo a opção recomendada.
+Essa modalidade depende de uma sessão do WhatsApp Web e pode estar sujeita às regras e limitações da plataforma. Para uso institucional de longo prazo, a API oficial continua sendo a opção recomendada. O bridge deste projeto ignora sincronização de histórico, não faz disparos em massa e opera a fila de primeiros contatos com intervalo mínimo configurável.
 
 Para testar localmente:
 
@@ -105,6 +105,9 @@ WHATSAPP_DRY_RUN="0"
 WHATSAPP_QR_BRIDGE_URL="http://127.0.0.1:3333"
 WHATSAPP_QR_BRIDGE_TOKEN="uma-chave-longa-e-exclusiva"
 WHATSAPP_QR_BRIDGE_AUTOSTART="1"
+WHATSAPP_AUTO_REPLY="0"
+WHATSAPP_OUTBOX_MIN_INTERVAL_SECONDS="12"
+WHATSAPP_QR_OUTBOUND_MIN_INTERVAL_MS="3500"
 ```
 
 Depois inicie o site com `npm run dev`, entre em `/admin` e use **Gerar QR** no painel **Canais do WhatsApp**. O bridge local inicia automaticamente. Também é possível executá-lo manualmente com:
@@ -126,6 +129,8 @@ WHATSAPP_QR_BRIDGE_HOST="0.0.0.0"
 WHATSAPP_QR_BRIDGE_TOKEN="a-mesma-chave-longa"
 WHATSAPP_QR_AUTH_DIR="/var/data/whatsapp"
 WHATSAPP_QR_INBOUND_URL="https://bobadvogados.com.br/api/webhooks/whatsapp/qr"
+WHATSAPP_QR_SYNC_RECENT_HISTORY="0"
+WHATSAPP_QR_OUTBOUND_MIN_INTERVAL_MS="3500"
 ```
 
 4. No Web Service principal do site, configure:
@@ -139,6 +144,8 @@ WHATSAPP_QR_BRIDGE_AUTOSTART="0"
 ```
 
 Use uma chave diferente para cada ambiente e mantenha-a apenas nas variáveis do Render. Sem o Persistent Disk, será necessário ler um novo QR após uma reinicialização do serviço QR. O bridge QR opera somente com mensagens de texto; arquivos continuam exigindo a API oficial.
+
+O fluxo do QR é deliberadamente conservador: o histórico não é reprocessado, respostas automáticas começam desligadas, a fila do site entrega um primeiro contato por vez e a ponte recusa envios em sequência rápida. Só serão enviados primeiros contatos de formulários com autorização explícita. Para atendimento em escala ou retomadas fora de uma conversa ativa, prefira a API oficial da Meta com templates aprovados.
 
 ## Testes
 

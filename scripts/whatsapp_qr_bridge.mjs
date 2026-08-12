@@ -2,7 +2,9 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 
-const PORT = Number(process.env.WHATSAPP_QR_BRIDGE_PORT || 3333);
+// Render exposes the service through PORT. Keep the explicit bridge port for
+// local development, where the main application expects port 3333 by default.
+const PORT = Number(process.env.PORT || process.env.WHATSAPP_QR_BRIDGE_PORT || 3333);
 const HOST = process.env.WHATSAPP_QR_BRIDGE_HOST || "127.0.0.1";
 const BRIDGE_TOKEN = process.env.WHATSAPP_QR_BRIDGE_TOKEN || "";
 const INBOUND_URL = process.env.WHATSAPP_QR_INBOUND_URL || `http://127.0.0.1:${process.env.PORT || 8000}/api/webhooks/whatsapp/qr`;
@@ -11,6 +13,7 @@ const QR_EXPIRES_MS = 55_000;
 const MEDIA_MAX_BYTES = Number(process.env.WHATSAPP_QR_MEDIA_MAX_BYTES || 15 * 1024 * 1024);
 const SYNC_RECENT_HISTORY = process.env.WHATSAPP_QR_SYNC_RECENT_HISTORY === "1";
 const HISTORY_LOOKBACK_MS = Number(process.env.WHATSAPP_QR_HISTORY_LOOKBACK_MS || 0);
+const OUTBOUND_MIN_INTERVAL_MS = Number(process.env.WHATSAPP_QR_OUTBOUND_MIN_INTERVAL_MS || 3_500);
 
 const runtime = {
   socket: null,
@@ -32,6 +35,7 @@ const runtime = {
   lastInboundAt: null,
   lastOutboundAt: null,
   lastSelfMessageAt: null,
+  lastOutboundSentAtMs: 0,
   lastError: null,
   events: [],
   startedAt: new Date().toISOString(),
@@ -775,8 +779,16 @@ async function sendText(to, text) {
   }
   if (!runtime.socket || runtime.status !== "connected") throw new Error("qr_session_not_connected");
 
+  const elapsed = Date.now() - runtime.lastOutboundSentAtMs;
+  if (runtime.lastOutboundSentAtMs && elapsed < OUTBOUND_MIN_INTERVAL_MS) {
+    const retryAfter = Math.ceil((OUTBOUND_MIN_INTERVAL_MS - elapsed) / 1000);
+    logEvent("message_send_deferred", { retry_after_seconds: retryAfter });
+    throw new Error(`qr_send_rate_limited_retry_in_${retryAfter}s`);
+  }
+
   logEvent("message_send_attempt", { jid_type: recipientJid.split("@").pop(), recipient_tail: recipientJid.slice(-12) });
   const result = await runtime.socket.sendMessage(recipientJid, { text: body });
+  runtime.lastOutboundSentAtMs = Date.now();
   patchRuntime({ lastOutboundAt: nowIso() });
   logEvent("message_sent", { jid_type: recipientJid.split("@").pop(), recipient_tail: recipientJid.slice(-12) });
   return { provider_message_id: cleanText(result?.key?.id) || null, recipient_jid: recipientJid };
@@ -839,6 +851,7 @@ async function publicStatus() {
         auth_available: await authCredentialsExist(),
         sync_recent_history: SYNC_RECENT_HISTORY,
         history_lookback_ms: HISTORY_LOOKBACK_MS,
+        outbound_min_interval_ms: OUTBOUND_MIN_INTERVAL_MS,
         reconnect_attempts: runtime.reconnectAttempts,
         socket_present: Boolean(runtime.socket),
         updated_at: runtime.updatedAt,
@@ -879,9 +892,21 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function isAuthorized(req) {
+  if (!BRIDGE_TOKEN) return false;
+  const received = cleanText(req.headers["x-qr-bridge-token"]);
+  return received.length === BRIDGE_TOKEN.length && received === BRIDGE_TOKEN;
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${HOST}:${PORT}`);
+    if (req.method === "GET" && url.pathname === "/healthz") {
+      return sendJson(res, 200, { ok: true, service: "whatsapp_qr_bridge" });
+    }
+    if (!isAuthorized(req)) {
+      return sendJson(res, 401, { ok: false, error: "unauthorized" });
+    }
     if (req.method === "GET" && url.pathname === "/status") {
       return sendJson(res, 200, await publicStatus());
     }
