@@ -42,6 +42,7 @@ from .settings import settings
 from .uploads import safe_display_filename, save_validated_bytes, save_validated_upload
 from .whatsapp import (
     auto_reply_for_inbound,
+    auto_triage_should_handoff,
     fetch_official_media,
     first_contact_message,
     media_kind_from_mime,
@@ -73,6 +74,12 @@ MONTH_NAMES = (
     "janeiro", "fevereiro", "março", "abril", "maio", "junho",
     "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
 )
+
+
+def finish_auto_reply(conversation_id: int) -> None:
+    db.mark_auto_reply(conversation_id)
+    if auto_triage_should_handoff(conversation_id):
+        db.update_conversation_controls(conversation_id, bot_enabled=False)
 
 
 class SelectiveGZipMiddleware:
@@ -1964,10 +1971,15 @@ def process_whatsapp_payload(payload: dict[str, Any]) -> None:
                         conversation_id, settings.whatsapp_auto_reply_cooldown_seconds
                     )
                 ):
-                    reply = auto_reply_for_inbound(text)
+                    conversation = db.get_conversation(conversation_id) or {}
+                    reply = auto_reply_for_inbound(
+                        text,
+                        conversation_id=conversation_id,
+                        kind=conversation.get("kind"),
+                    )
                     try:
                         send_whatsapp_text(phone, reply, conversation_id=conversation_id)
-                        db.mark_auto_reply(conversation_id)
+                        finish_auto_reply(conversation_id)
                     except Exception as exc:  # pragma: no cover - integration/runtime path
                         db.record_whatsapp_message(
                             conversation_id,
@@ -2066,10 +2078,15 @@ def record_evolution_inbound(item: dict[str, Any]) -> int | None:
         and not db.is_whatsapp_opted_out(phone)
         and db.can_auto_reply(conversation_id, settings.whatsapp_auto_reply_cooldown_seconds)
     ):
-        reply = auto_reply_for_inbound(text)
+        conversation = db.get_conversation(conversation_id) or {}
+        reply = auto_reply_for_inbound(
+            text,
+            conversation_id=conversation_id,
+            kind=conversation.get("kind"),
+        )
         try:
             send_whatsapp_text(phone, reply, conversation_id=conversation_id)
-            db.mark_auto_reply(conversation_id)
+            finish_auto_reply(conversation_id)
         except Exception as exc:  # pragma: no cover - external integration path
             db.record_whatsapp_message(
                 conversation_id,
@@ -2126,10 +2143,15 @@ def receive_qr_inbound(payload: QrInboundPayload, request: Request) -> JSONRespo
         and not db.is_whatsapp_opted_out(phone)
         and db.can_auto_reply(conversation_id, settings.whatsapp_auto_reply_cooldown_seconds)
     ):
-        reply = auto_reply_for_inbound(payload.text)
+        conversation = db.get_conversation(conversation_id) or {}
+        reply = auto_reply_for_inbound(
+            payload.text,
+            conversation_id=conversation_id,
+            kind=conversation.get("kind"),
+        )
         try:
             send_whatsapp_text(phone, reply, conversation_id=conversation_id)
-            db.mark_auto_reply(conversation_id)
+            finish_auto_reply(conversation_id)
         except Exception as exc:  # pragma: no cover - integration/runtime path
             db.record_whatsapp_message(
                 conversation_id,

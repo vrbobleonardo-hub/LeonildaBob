@@ -15,7 +15,7 @@ services:
       - key: APP_BASE_URL
         value: https://bobadvogados.com.br
       - key: ALLOWED_HOSTS
-        value: bobadvogados.com.br,leonildabob.onrender.com,127.0.0.1,localhost
+        value: bobadvogados.com.br,www.bobadvogados.com.br,leonildabob.onrender.com,127.0.0.1,localhost
       - key: COOKIE_SECURE
         value: "1"
       - key: DOCS_ENABLED
@@ -41,7 +41,9 @@ services:
       - key: WHATSAPP_DRY_RUN
         value: "0"
       - key: WHATSAPP_AUTO_REPLY
-        value: "0"
+        value: "1"
+      - key: WHATSAPP_AUTO_REPLY_COOLDOWN_SECONDS
+        value: "15"
       - key: WHATSAPP_OUTBOX_MIN_INTERVAL_SECONDS
         value: "12"
       - key: WHATSAPP_QR_BRIDGE_TOKEN

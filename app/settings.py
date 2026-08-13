@@ -126,7 +126,7 @@ class Settings:
         # opt-in avoids unexpected messages when a number is paired or restored.
         self.whatsapp_auto_reply = env_bool("WHATSAPP_AUTO_REPLY", False)
         self.whatsapp_auto_reply_cooldown_seconds = env_int(
-            "WHATSAPP_AUTO_REPLY_COOLDOWN_SECONDS", 21_600, minimum=60, maximum=604_800
+            "WHATSAPP_AUTO_REPLY_COOLDOWN_SECONDS", 15, minimum=5, maximum=604_800
         )
         self.whatsapp_outbox_min_interval_seconds = env_int(
             "WHATSAPP_OUTBOX_MIN_INTERVAL_SECONDS", 12, minimum=5, maximum=300

@@ -47,7 +47,11 @@ from app import db  # noqa: E402
 from app import whatsapp_evolution  # noqa: E402
 from app.main import app, dispatch_pending_webhooks, is_whatsapp_opt_out_request, templates as jinja_templates  # noqa: E402
 from app.settings import Settings, env_bool, settings  # noqa: E402
-from app.whatsapp import trusted_meta_media_url  # noqa: E402
+from app.whatsapp import (  # noqa: E402
+    auto_reply_for_inbound,
+    auto_triage_should_handoff,
+    trusted_meta_media_url,
+)
 from app.whatsapp_evolution import evolution_inbound_messages, evolution_session_action  # noqa: E402
 
 
@@ -875,6 +879,46 @@ def main() -> None:
             )
             expect(bpc_privacy_delete.status_code == 200, bpc_privacy_delete.text)
             expect(not client.get("/api/admin/conversations").json()["conversations"], "Conversa não removida")
+
+            triage_phone = "5511966665555"
+            triage_id = db.get_or_create_conversation(triage_phone, kind="trabalhista")
+            db.record_whatsapp_message(
+                triage_id,
+                direction="out",
+                text="Conte com suas palavras o que aconteceu.",
+                status="sent",
+            )
+            db.record_whatsapp_message(
+                triage_id,
+                direction="in",
+                text="Fui demitido e não recebi as verbas rescisórias.",
+                status="received",
+            )
+            second_question = auto_reply_for_inbound(
+                "Fui demitido e não recebi as verbas rescisórias.",
+                conversation_id=triage_id,
+                kind="trabalhista",
+            )
+            expect("datas mais importantes" in second_question, "Triagem repetiu o relato inicial")
+            for answer in (
+                "A demissão ocorreu em 10 de junho e a empresa não respondeu.",
+                "Tenho contrato, holerites e termo de rescisão.",
+                "Quero entender os valores e prefiro retorno à tarde.",
+            ):
+                db.record_whatsapp_message(
+                    triage_id,
+                    direction="in",
+                    text=answer,
+                    status="received",
+                )
+            expect(auto_triage_should_handoff(triage_id), "Triagem não concluiu a passagem humana")
+            with db.connect() as connection:
+                connection.execute(
+                    "DELETE FROM whatsapp_messages WHERE conversation_id = ?", (triage_id,)
+                )
+                connection.execute(
+                    "DELETE FROM whatsapp_conversations WHERE id = ?", (triage_id,)
+                )
 
             unpublished = client.post(
                 f"/admin/artigos/{post_id}/retirar",

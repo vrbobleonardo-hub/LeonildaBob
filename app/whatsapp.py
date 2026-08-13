@@ -107,7 +107,10 @@ def first_contact_message(kind: LeadKind, name: str, message: str | None = None)
         )
     return (
         f"Olá, {first_name}. Aqui é Lucas, atendimento do Bob Advogados. "
-        f"Recebemos seu contato pelo site. Pode informar a melhor janela de horário para retorno?{summary_note}"
+        "Recebemos seu contato pelo site. Para que a equipe compreenda sua situação desde o início, "
+        "conte com suas palavras o que aconteceu, quando começou e qual resultado você espera. "
+        "Se souber, informe também a área jurídica relacionada.\n\n"
+        f"Não envie senhas, códigos bancários ou dados de cartão por aqui.{summary_note}"
     )
 
 
@@ -428,26 +431,144 @@ def fetch_official_media(media_id: str) -> tuple[bytes, str | None, int | None]:
         return b"".join(content_parts), str(info.get("mime_type") or "") or None, size or None
 
 
-def auto_reply_for_inbound(text: str) -> str:
-    normalized = unicodedata.normalize("NFKD", (text or "").strip().lower())
-    normalized = "".join(character for character in normalized if not unicodedata.combining(character))
-    words = set(re.findall(r"[a-z0-9]+", normalized))
-    if words.intersection({"oab", "bacharel", "exame", "prova"}):
+def _normalized_words(value: str) -> set[str]:
+    normalized = unicodedata.normalize("NFKD", (value or "").strip().lower())
+    normalized = "".join(
+        character for character in normalized if not unicodedata.combining(character)
+    )
+    return set(re.findall(r"[a-z0-9]+", normalized))
+
+
+def _triage_area(kind: str | None, transcript: str) -> str:
+    words = _normalized_words(transcript)
+    if kind == "instituto" or words.intersection({"oab", "bacharel", "exame", "prova"}):
+        return "instituto"
+    if kind == "bpc" or words.intersection(
+        {"bpc", "loas", "inss", "aposentadoria", "pensao", "previdenciario", "beneficio"}
+    ):
+        return "previdenciario"
+    if kind == "trabalhista" or words.intersection(
+        {"demissao", "rescisao", "fgts", "salario", "empresa", "trabalho", "trabalhista"}
+    ):
+        return "trabalhista"
+    if words.intersection({"divorcio", "guarda", "alimentos", "inventario", "heranca", "familia"}):
+        return "familia"
+    if words.intersection({"banco", "fraude", "cobranca", "serasa", "produto", "consumidor"}):
+        return "consumidor"
+    if words.intersection({"imovel", "aluguel", "locacao", "usucapiao", "construtora"}):
+        return "imobiliario"
+    if words.intersection({"idoso", "curatela", "abandono", "golpe"}):
+        return "idoso"
+    return "geral"
+
+
+def _case_story_question(area: str) -> str:
+    prompts = {
+        "instituto": (
+            "Para eu compreender seu momento, conte se já concluiu Direito, se já prestou a OAB "
+            "e qual tem sido sua maior dificuldade na preparação."
+        ),
+        "previdenciario": (
+            "Para eu compreender seu caso, conte com suas palavras qual benefício foi pedido, "
+            "o que o INSS respondeu e quando isso aconteceu."
+        ),
+        "trabalhista": (
+            "Para eu compreender seu caso, conte com suas palavras o que aconteceu no trabalho, "
+            "se o vínculo ainda existe e quando o problema começou."
+        ),
+        "familia": (
+            "Para eu compreender a situação com o cuidado necessário, conte o que aconteceu, "
+            "quem está envolvido e se já existe processo ou acordo."
+        ),
+        "consumidor": (
+            "Para eu compreender o problema, conte o que foi contratado ou cobrado, "
+            "quando aconteceu e como a empresa respondeu."
+        ),
+        "imobiliario": (
+            "Para eu compreender o caso, conte qual é sua relação com o imóvel, "
+            "o que aconteceu e se existe contrato, notificação ou processo."
+        ),
+        "idoso": (
+            "Para eu compreender e preservar a segurança da pessoa idosa, conte o que aconteceu, "
+            "há quanto tempo e se existe algum risco imediato."
+        ),
+        "geral": (
+            "Para eu compreender e direcionar corretamente, conte com suas palavras o que aconteceu, "
+            "quando começou e qual é a situação hoje."
+        ),
+    }
+    return prompts[area]
+
+
+def _auto_triage_step(history: list[dict[str, Any]]) -> int:
+    inbound = [
+        item for item in history if item.get("direction") == "in" and item.get("text")
+    ]
+    inbound_count = len(inbound)
+    # Leads submitted through the site already receive the first question in the
+    # outbound welcome message. Their first answer should advance the triage.
+    first_inbound_id = min((int(item["id"]) for item in inbound), default=0)
+    has_prior_outbound = any(
+        item.get("direction") == "out"
+        and item.get("text")
+        and int(item.get("id") or 0) < first_inbound_id
+        for item in history
+    )
+    return max(1, inbound_count + (1 if has_prior_outbound else 0))
+
+
+def auto_triage_should_handoff(conversation_id: int) -> bool:
+    """Indica quando o relato já tem informação suficiente para revisão humana."""
+    return _auto_triage_step(db.list_messages(conversation_id, limit=24)) >= 5
+
+
+def auto_reply_for_inbound(
+    text: str,
+    *,
+    conversation_id: int | None = None,
+    kind: str | None = None,
+) -> str:
+    """Conduz uma triagem curta e responsiva, sem prometer resultado jurídico."""
+    history = db.list_messages(conversation_id, limit=24) if conversation_id else []
+    inbound = [item for item in history if item.get("direction") == "in" and item.get("text")]
+    transcript = " ".join(str(item.get("text") or "") for item in inbound) or text
+    area = _triage_area(kind, transcript)
+    step = _auto_triage_step(history) if history else 1
+    urgent_words = _normalized_words(text).intersection(
+        {"hoje", "amanha", "audiencia", "prazo", "urgente", "internacao", "despejo", "violencia"}
+    )
+
+    if step == 1:
         return (
-            "Recebi sua mensagem. Para o Instituto Leonilda Bob, me diga por favor: "
-            "você já concluiu Direito, já prestou a OAB e em qual cidade está?"
+            "Olá. Sou o assistente de atendimento do Bob Advogados. Vou fazer algumas perguntas curtas "
+            "para que a equipe receba seu relato de forma organizada.\n\n"
+            f"{_case_story_question(area)}\n\n"
+            "Não envie senhas, códigos bancários ou dados de cartão por aqui."
         )
-    if words.intersection({"bpc", "loas", "inss", "indeferido", "negado", "negativa", "beneficio"}):
+    if urgent_words:
         return (
-            "Recebi sua mensagem sobre BPC/LOAS. Para a triagem inicial, envie por favor a carta de indeferimento do INSS, "
-            "a data do pedido e um resumo da renda familiar e das despesas essenciais."
+            "Entendi que pode haver urgência. Qual é o prazo ou risco imediato e em que data ele ocorre? "
+            "Se houver perigo à integridade de alguém, procure também o serviço público de emergência adequado."
         )
-    if words.intersection({"demissao", "rescisao", "fgts", "salario", "empresa", "trabalho", "trabalhista"}):
+    if step == 2:
         return (
-            "Recebi sua mensagem. Para entender melhor a questão trabalhista, me diga por favor: "
-            "você ainda trabalha na empresa, seu registro era CLT ou outro formato, e qual é o principal problema?"
+            "Obrigado por explicar. Para situar a equipe: quais são as datas mais importantes, "
+            "o que já foi tentado e qual foi a última resposta da outra parte ou do órgão envolvido?"
+        )
+    if step == 3:
+        return (
+            "Certo. Você possui documentos relacionados ao caso, como contrato, carta, decisão, "
+            "comprovantes, conversas ou laudos? Diga apenas quais possui; a equipe orientará depois "
+            "a forma segura de envio."
+        )
+    if step == 4:
+        return (
+            "Para concluir esta triagem: qual resultado você espera e qual período é melhor para a equipe "
+            "retornar, manhã ou tarde? A análise de viabilidade é individual e os próximos passos serão "
+            "explicados com transparência, sem promessa de resultado."
         )
     return (
-        "Recebi sua mensagem. Ela foi encaminhada ao atendimento humano. "
-        "Se puder, informe também o melhor horário para retorno."
+        "Perfeito. Seu relato inicial ficou organizado e será encaminhado à equipe para revisão. "
+        "O atendimento humano continuará por este número no período informado. Se surgir um prazo novo "
+        "antes do retorno, avise nesta conversa."
     )
