@@ -186,6 +186,14 @@ A imagem está fixada em `evoapicloud/evolution-api:v2.3.7`, sem usar a tag mut�
 
 As palavras `PARAR`, `SAIR`, `STOP`, `CANCELAR` e `REMOVER`, quando recebidas isoladamente, registram imediatamente a interrupção do contato, fecham a conversa automática e suprimem mensagens pendentes. Novos envios pelo painel também são bloqueados até que haja uma nova base de consentimento tratada fora do fluxo automático.
 
+### Triagem automatizada e BPC/LOAS
+
+O atendimento automatizado é identificado como bot e faz apenas triagem inicial. Ele não realiza diagnóstico jurídico ou médico, não avalia documentos como perito, não promete aprovação, pagamento retroativo, prazo, liminar, valor ou resultado e não pressiona o contato a contratar o escritório.
+
+No fluxo previdenciário, o bot diferencia o BPC/LOAS dos benefícios por incapacidade. Antes de perguntar condição de saúde ou limitações funcionais, informa a finalidade da coleta e exige autorização específica e destacada. Sem autorização, a coleta automatizada é encerrada e a conversa segue para atendimento humano. O bot nunca solicita senha do Meu INSS, senha bancária, código de autenticação, CPF, RG ou fotos de documentos durante a triagem.
+
+Negativa, cessação, recurso, urgência, vulnerabilidade, pedido de análise jurídica ou recebimento de arquivo provocam transferência imediata para a equipe. O valor nominal do salário-mínimo não deve ser fixado em mensagens automáticas: quando essa informação for necessária, consulte uma fonte oficial atualizada no momento do atendimento.
+
 ## Testes
 
 ```bash

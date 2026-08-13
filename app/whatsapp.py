@@ -76,7 +76,7 @@ def first_contact_message(kind: LeadKind, name: str, message: str | None = None)
     summary_note = f"\n\nResumo enviado no site: {summary}" if summary else ""
     if kind == "instituto":
         return (
-            f"Olá, {first_name}. Aqui é Lucas, do atendimento do Instituto Leonilda Bob. "
+            f"Olá, {first_name}. Este é o atendimento automatizado do Instituto Leonilda Bob. "
             "Recebemos seu interesse pelo site. A iniciativa está em constituição e é voltada a apoiar bacharéis em Direito "
             "na preparação para o Exame da OAB.\n\n"
             "Para entendermos melhor, pode me responder:\n"
@@ -87,7 +87,7 @@ def first_contact_message(kind: LeadKind, name: str, message: str | None = None)
         )
     if kind == "trabalhista":
         return (
-            f"Olá, {first_name}. Aqui é Lucas, atendimento do Bob Advogados. "
+            f"Olá, {first_name}. Este é o atendimento automatizado do Bob Advogados. "
             "Recebemos seu contato pelo site sobre uma questão trabalhista.\n\n"
             "Para o primeiro atendimento, pode me responder:\n"
             "1) Você ainda trabalha na empresa ou já saiu?\n"
@@ -97,16 +97,19 @@ def first_contact_message(kind: LeadKind, name: str, message: str | None = None)
         )
     if kind == "bpc":
         return (
-            f"Olá, {first_name}. Aqui é Lucas, atendimento do Bob Advogados. "
+            f"Olá, {first_name}. Este é o atendimento automatizado do Bob Advogados. "
             "Recebemos seu pedido de triagem sobre BPC/LOAS pelo site.\n\n"
-            "Para uma análise inicial organizada, pode me enviar:\n"
-            "1) A carta de indeferimento do INSS;\n"
-            "2) A data em que o pedido foi feito;\n"
-            "3) Um resumo da renda familiar e das principais despesas com saúde, remédios, fraldas ou tratamentos.\n\n"
-            f"A triagem é informativa e não envolve promessa de resultado. Cada caso exige análise individual.{summary_note}"
+            "O BPC é um benefício assistencial, não exige contribuição previdenciária e possui requisitos "
+            "próprios. Pode haver possibilidade de análise, mas diagnóstico ou doença isoladamente não "
+            "garante o benefício. O caso concreto considera impedimentos de longo prazo, barreiras, "
+            "situação familiar, renda, despesas, documentação e avaliações aplicáveis.\n\n"
+            "Para fazer somente a triagem inicial, precisamos perguntar informações mínimas sobre saúde "
+            "e limitações funcionais. Esses são dados pessoais sensíveis e serão usados apenas para "
+            "organizar o atendimento jurídico. Você pode recusar e ainda assim pedir atendimento humano.\n\n"
+            "Se concordar com essa finalidade, responda AUTORIZO. Se não concordar, responda NÃO AUTORIZO."
         )
     return (
-        f"Olá, {first_name}. Aqui é Lucas, atendimento do Bob Advogados. "
+        f"Olá, {first_name}. Este é o atendimento automatizado do Bob Advogados. "
         "Recebemos seu contato pelo site. Para que a equipe compreenda sua situação desde o início, "
         "conte com suas palavras o que aconteceu, quando começou e qual resultado você espera. "
         "Se souber, informe também a área jurídica relacionada.\n\n"
@@ -439,12 +442,23 @@ def _normalized_words(value: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", normalized))
 
 
+def _normalized_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", (value or "").strip().lower())
+    return "".join(
+        character for character in normalized if not unicodedata.combining(character)
+    )
+
+
 def _triage_area(kind: str | None, transcript: str) -> str:
     words = _normalized_words(transcript)
     if kind == "instituto" or words.intersection({"oab", "bacharel", "exame", "prova"}):
         return "instituto"
     if kind == "bpc" or words.intersection(
-        {"bpc", "loas", "inss", "aposentadoria", "pensao", "previdenciario", "beneficio"}
+        {
+            "bpc", "loas", "inss", "aposentadoria", "pensao", "previdenciario",
+            "beneficio", "incapacidade", "auxilio", "autismo", "depressao", "cancer",
+            "hernia", "poliomielite", "auditiva", "deficiencia",
+        }
     ):
         return "previdenciario"
     if kind == "trabalhista" or words.intersection(
@@ -500,6 +514,156 @@ def _case_story_question(area: str) -> str:
     return prompts[area]
 
 
+def _explicit_health_consent(history: list[dict[str, Any]]) -> tuple[str, int]:
+    """Retorna pending/granted/denied e o id da mensagem de consentimento."""
+    consent_prompt_id = 0
+    for item in history:
+        if item.get("direction") != "out":
+            continue
+        normalized = _normalized_text(str(item.get("text") or ""))
+        if "dados pessoais sensiveis" in normalized and "responda autorizo" in normalized:
+            consent_prompt_id = int(item.get("id") or 0)
+    if not consent_prompt_id:
+        return "pending", 0
+    for item in history:
+        if item.get("direction") != "in" or int(item.get("id") or 0) <= consent_prompt_id:
+            continue
+        normalized = _normalized_text(str(item.get("text") or ""))
+        if re.search(r"\b(nao autorizo|não autorizo|recuso)\b", normalized):
+            return "denied", int(item.get("id") or 0)
+        if re.search(r"\b(autorizo|concordo)\b", normalized):
+            return "granted", int(item.get("id") or 0)
+    return "pending", consent_prompt_id
+
+
+def _handoff_reason(history: list[dict[str, Any]], area: str) -> str | None:
+    inbound = [item for item in history if item.get("direction") == "in"]
+    transcript = _normalized_text(
+        " ".join(str(item.get("text") or "") for item in inbound)
+    )
+    words = _normalized_words(transcript)
+    if any(str(item.get("message_type") or "text") != "text" for item in inbound):
+        return "document"
+    if words.intersection({"negado", "negada", "indeferido", "indeferida", "cessado", "cessada", "recurso"}):
+        return "decision"
+    if words.intersection(
+        {
+            "urgente", "urgencia", "hoje", "amanha", "audiencia", "prazo",
+            "internacao", "despejo", "violencia", "fome", "abandono", "moradia",
+            "vulnerabilidade",
+        }
+    ):
+        return "urgent"
+    if any(
+        phrase in transcript
+        for phrase in (
+            "analise juridica", "analisar meu caso", "advogado analisar",
+            "advogada analisar", "falar com advogado", "falar com advogada",
+        )
+    ):
+        return "legal_analysis"
+    if any(
+        phrase in transcript
+        for phrase in ("enviei o documento", "anexei o documento", "enviei o laudo", "anexei o laudo")
+    ):
+        return "document"
+    latest_text = _normalized_text(str(inbound[-1].get("text") or "")) if inbound else ""
+    latest_words = _normalized_words(latest_text)
+    if area == "geral" and "?" in str(inbound[-1].get("text") or "") and not latest_words.issubset(
+        {"oi", "ola", "tudo", "bem", "bom", "dia", "boa", "tarde", "noite"}
+    ):
+        return "uncertain"
+    if area == "previdenciario" and _explicit_health_consent(history)[0] == "denied":
+        return "consent_denied"
+    return None
+
+
+def _handoff_reply(reason: str) -> str:
+    replies = {
+        "document": (
+            "Recebi o envio. Como há documento no atendimento, não farei avaliação automática do conteúdo. "
+            "Vou encaminhar a conversa para um atendente humano, que orientará o tratamento seguro do material."
+        ),
+        "decision": (
+            "Como você informou negativa, cessação ou recurso, o caso precisa de análise individual. "
+            "Vou encaminhar sua conversa para um atendente humano. Isso não representa promessa de resultado."
+        ),
+        "urgent": (
+            "Entendi que pode haver urgência ou vulnerabilidade. Vou encaminhar agora para um atendente humano. "
+            "Se houver risco imediato à integridade de alguém, procure também o serviço público de emergência adequado."
+        ),
+        "legal_analysis": (
+            "Como você pediu análise jurídica, vou encaminhar sua conversa para um atendente humano. "
+            "O atendimento automatizado não realiza diagnóstico jurídico nem promete resultado."
+        ),
+        "consent_denied": (
+            "Tudo bem. Não continuarei a coleta automatizada de informações de saúde. "
+            "Vou encaminhar sua conversa para um atendente humano, sem prejuízo ao atendimento."
+        ),
+    }
+    return replies.get(
+        reason,
+        "Não consigo confirmar essa informação com segurança. Vou encaminhar sua dúvida para um atendente.",
+    )
+
+
+def _bpc_consent_prompt() -> str:
+    return (
+        "Este é o atendimento automatizado do Bob Advogados. O BPC/LOAS é assistencial, não exige "
+        "contribuição previdenciária e tem requisitos próprios. Pode haver possibilidade de análise, "
+        "mas uma doença ou diagnóstico isolado não garante o benefício. São considerados o caso concreto, "
+        "impedimentos de longo prazo, barreiras, renda, despesas, situação familiar, documentação e "
+        "avaliações administrativa ou judicial. Benefícios por incapacidade são diferentes e dependem, "
+        "entre outros fatores, da incapacidade para o trabalho e de requisitos previdenciários.\n\n"
+        "Para a triagem mínima, precisamos perguntar informações sobre saúde e limitações funcionais. "
+        "Esses são dados pessoais sensíveis e serão usados somente para organizar o atendimento jurídico. "
+        "Você pode recusar e pedir atendimento humano.\n\n"
+        "Se concordar com essa finalidade, responda AUTORIZO. Se não concordar, responda NÃO AUTORIZO. "
+        "Não envie senha do Meu INSS, senha bancária, códigos de autenticação, CPF, RG ou fotos de documentos."
+    )
+
+
+def _bpc_triage_reply(history: list[dict[str, Any]]) -> str:
+    consent_state, consent_message_id = _explicit_health_consent(history)
+    if consent_state != "granted":
+        return _bpc_consent_prompt()
+    answers_after_consent = sum(
+        1
+        for item in history
+        if item.get("direction") == "in"
+        and item.get("text")
+        and int(item.get("id") or 0) > consent_message_id
+    )
+    if answers_after_consent == 0:
+        return (
+            "Obrigado pela autorização específica. O atendimento é para você ou para outra pessoa? "
+            "Qual é a idade? Já houve pedido no INSS e ele está pendente, deferido, negado ou cessado? "
+            "O CadÚnico está atualizado?"
+        )
+    if answers_after_consent == 1:
+        return (
+            "Para compreender apenas o necessário à triagem: qual condição de saúde ou deficiência é relatada, "
+            "em quais atividades do dia a dia, estudo, trabalho ou participação social ela interfere e há quanto "
+            "tempo existem essas limitações? O diagnóstico isolado não permite concluir se há direito."
+        )
+    if answers_after_consent == 2:
+        return (
+            "Quantas pessoas moram na mesma residência e qual é a renda mensal aproximada de cada uma? "
+            "Há gastos relevantes com medicamentos, terapias, consultas, transporte ou cuidadores? "
+            "Informe somente valores aproximados; não envie comprovantes agora."
+        )
+    if answers_after_consent == 3:
+        return (
+            "Para finalizar: existem documentos médicos e comprovantes de renda ou despesas? Diga somente quais. "
+            "Não envie arquivos neste momento. Qual período é melhor para o retorno humano, manhã ou tarde?"
+        )
+    return (
+        "Obrigado. A triagem inicial foi concluída e será encaminhada para atendimento humano. "
+        "As informações não confirmam direito ao benefício nem substituem análise jurídica, administrativa, "
+        "social ou médica do caso concreto."
+    )
+
+
 def _auto_triage_step(history: list[dict[str, Any]]) -> int:
     inbound = [
         item for item in history if item.get("direction") == "in" and item.get("text")
@@ -519,7 +683,22 @@ def _auto_triage_step(history: list[dict[str, Any]]) -> int:
 
 def auto_triage_should_handoff(conversation_id: int) -> bool:
     """Indica quando o relato já tem informação suficiente para revisão humana."""
-    return _auto_triage_step(db.list_messages(conversation_id, limit=24)) >= 5
+    history = db.list_messages(conversation_id, limit=24)
+    transcript = " ".join(str(item.get("text") or "") for item in history if item.get("direction") == "in")
+    conversation = db.get_conversation(conversation_id) or {}
+    area = _triage_area(conversation.get("kind"), transcript)
+    if _handoff_reason(history, area):
+        return True
+    if area == "previdenciario":
+        consent_state, consent_message_id = _explicit_health_consent(history)
+        return consent_state == "granted" and sum(
+            1
+            for item in history
+            if item.get("direction") == "in"
+            and item.get("text")
+            and int(item.get("id") or 0) > consent_message_id
+        ) >= 4
+    return _auto_triage_step(history) >= 5
 
 
 def auto_reply_for_inbound(
@@ -534,9 +713,12 @@ def auto_reply_for_inbound(
     transcript = " ".join(str(item.get("text") or "") for item in inbound) or text
     area = _triage_area(kind, transcript)
     step = _auto_triage_step(history) if history else 1
-    urgent_words = _normalized_words(text).intersection(
-        {"hoje", "amanha", "audiencia", "prazo", "urgente", "internacao", "despejo", "violencia"}
-    )
+    handoff_reason = _handoff_reason(history, area) if history else None
+
+    if handoff_reason:
+        return _handoff_reply(handoff_reason)
+    if area == "previdenciario":
+        return _bpc_triage_reply(history) if history else _bpc_consent_prompt()
 
     if step == 1:
         return (
@@ -544,11 +726,6 @@ def auto_reply_for_inbound(
             "para que a equipe receba seu relato de forma organizada.\n\n"
             f"{_case_story_question(area)}\n\n"
             "Não envie senhas, códigos bancários ou dados de cartão por aqui."
-        )
-    if urgent_words:
-        return (
-            "Entendi que pode haver urgência. Qual é o prazo ou risco imediato e em que data ele ocorre? "
-            "Se houver perigo à integridade de alguém, procure também o serviço público de emergência adequado."
         )
     if step == 2:
         return (

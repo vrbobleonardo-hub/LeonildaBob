@@ -1965,7 +1965,7 @@ def process_whatsapp_payload(payload: dict[str, Any]) -> None:
                     continue
                 if (
                     settings.whatsapp_auto_reply
-                    and text
+                    and (text or message_type != "text")
                     and not db.is_whatsapp_opted_out(phone)
                     and db.can_auto_reply(
                         conversation_id, settings.whatsapp_auto_reply_cooldown_seconds
@@ -1973,7 +1973,7 @@ def process_whatsapp_payload(payload: dict[str, Any]) -> None:
                 ):
                     conversation = db.get_conversation(conversation_id) or {}
                     reply = auto_reply_for_inbound(
-                        text,
+                        text or "Documento enviado.",
                         conversation_id=conversation_id,
                         kind=conversation.get("kind"),
                     )
@@ -2074,13 +2074,13 @@ def record_evolution_inbound(item: dict[str, Any]) -> int | None:
         return conversation_id
     if (
         settings.whatsapp_auto_reply
-        and text
+        and (text or str(item.get("message_type") or "text") != "text")
         and not db.is_whatsapp_opted_out(phone)
         and db.can_auto_reply(conversation_id, settings.whatsapp_auto_reply_cooldown_seconds)
     ):
         conversation = db.get_conversation(conversation_id) or {}
         reply = auto_reply_for_inbound(
-            text,
+            text or "Documento enviado.",
             conversation_id=conversation_id,
             kind=conversation.get("kind"),
         )
@@ -2145,7 +2145,7 @@ def receive_qr_inbound(payload: QrInboundPayload, request: Request) -> JSONRespo
     ):
         conversation = db.get_conversation(conversation_id) or {}
         reply = auto_reply_for_inbound(
-            payload.text,
+            payload.text or "Documento enviado.",
             conversation_id=conversation_id,
             kind=conversation.get("kind"),
         )

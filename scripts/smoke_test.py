@@ -920,6 +920,114 @@ def main() -> None:
                     "DELETE FROM whatsapp_conversations WHERE id = ?", (triage_id,)
                 )
 
+            bpc_triage_id = db.get_or_create_conversation(
+                "5511955554444", kind="bpc"
+            )
+            db.record_whatsapp_message(
+                bpc_triage_id,
+                direction="in",
+                text="Quero saber se autismo garante BPC.",
+                status="received",
+            )
+            consent_prompt = auto_reply_for_inbound(
+                "Quero saber se autismo garante BPC.",
+                conversation_id=bpc_triage_id,
+                kind="bpc",
+            )
+            expect("dados pessoais sensíveis" in consent_prompt, "BPC coletou saúde sem finalidade")
+            expect("diagnóstico isolado não garante" in consent_prompt, "BPC prometeu por diagnóstico")
+            db.record_whatsapp_message(
+                bpc_triage_id,
+                direction="out",
+                text=consent_prompt,
+                status="sent",
+            )
+            db.record_whatsapp_message(
+                bpc_triage_id,
+                direction="in",
+                text="AUTORIZO",
+                status="received",
+            )
+            bpc_first_question = auto_reply_for_inbound(
+                "AUTORIZO",
+                conversation_id=bpc_triage_id,
+                kind="bpc",
+            )
+            expect("atendimento é para você" in bpc_first_question, "Consentimento BPC não avançou")
+            expect(not auto_triage_should_handoff(bpc_triage_id), "BPC transferiu antes da triagem mínima")
+
+            refusal_triage_id = db.get_or_create_conversation(
+                "5511922221111", kind="bpc"
+            )
+            db.record_whatsapp_message(
+                refusal_triage_id,
+                direction="out",
+                text=consent_prompt,
+                status="sent",
+            )
+            db.record_whatsapp_message(
+                refusal_triage_id,
+                direction="in",
+                text="NÃO AUTORIZO",
+                status="received",
+            )
+            refusal_reply = auto_reply_for_inbound(
+                "NÃO AUTORIZO",
+                conversation_id=refusal_triage_id,
+                kind="bpc",
+            )
+            expect("Não continuarei a coleta" in refusal_reply, "Recusa de saúde não foi respeitada")
+            expect(auto_triage_should_handoff(refusal_triage_id), "Recusa não transferiu ao humano")
+
+            denied_triage_id = db.get_or_create_conversation(
+                "5511944443333", kind="bpc"
+            )
+            db.record_whatsapp_message(
+                denied_triage_id,
+                direction="in",
+                text="Meu BPC foi negado e quero análise jurídica.",
+                status="received",
+            )
+            denied_reply = auto_reply_for_inbound(
+                "Meu BPC foi negado e quero análise jurídica.",
+                conversation_id=denied_triage_id,
+                kind="bpc",
+            )
+            expect("atendente humano" in denied_reply, "Negativa BPC não foi transferida")
+            expect(auto_triage_should_handoff(denied_triage_id), "Negativa manteve o bot ativo")
+
+            document_triage_id = db.get_or_create_conversation("5511933332222")
+            db.record_whatsapp_message(
+                document_triage_id,
+                direction="in",
+                text="",
+                message_type="document",
+                media_name="carta.pdf",
+                status="received",
+            )
+            document_reply = auto_reply_for_inbound(
+                "Documento enviado.",
+                conversation_id=document_triage_id,
+            )
+            expect("não farei avaliação automática" in document_reply, "Documento não foi protegido")
+            expect(auto_triage_should_handoff(document_triage_id), "Documento manteve o bot ativo")
+
+            with db.connect() as connection:
+                for test_conversation_id in (
+                    bpc_triage_id,
+                    refusal_triage_id,
+                    denied_triage_id,
+                    document_triage_id,
+                ):
+                    connection.execute(
+                        "DELETE FROM whatsapp_messages WHERE conversation_id = ?",
+                        (test_conversation_id,),
+                    )
+                    connection.execute(
+                        "DELETE FROM whatsapp_conversations WHERE id = ?",
+                        (test_conversation_id,),
+                    )
+
             unpublished = client.post(
                 f"/admin/artigos/{post_id}/retirar",
                 data={"csrf_token": csrf},
