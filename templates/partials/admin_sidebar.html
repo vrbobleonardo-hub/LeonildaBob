@@ -10,11 +10,14 @@
     <a href="/admin" {% if page == 'admin' %}aria-current="page"{% endif %}>Atendimento</a>
     <a href="/admin/artigos" {% if page == 'admin-blog' %}aria-current="page"{% endif %}>Meus artigos</a>
     <a href="/admin/artigos/novo" {% if page == 'admin-blog-editor' and not post.id %}aria-current="page"{% endif %}>Escrever novo artigo</a>
-    <a href="/blog" target="_blank" rel="noopener">Ver o blog <span class="sr-only">(abre em nova aba)</span></a>
+    <a href="/blog" target="_blank" rel="noopener" aria-label="Ver o blog, abre em nova aba">Ver o blog</a>
     {% if page == 'admin' %}
     <a href="#contatos">Contatos</a>
     <a href="#whatsapp">WhatsApp</a>
     <a href="#mensagens">Mensagens</a>
+    <a href="#qualidade">Qualidade</a>
+    <a href="#base-juridica">Base jurídica</a>
+    <a href="#privacidade">Privacidade</a>
     <a href="#conexao">Conexão</a>
     {% endif %}
   </nav>

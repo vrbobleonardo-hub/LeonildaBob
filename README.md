@@ -194,6 +194,16 @@ No fluxo previdenciário, o bot diferencia o BPC/LOAS dos benefícios por incapa
 
 Negativa, cessação, recurso, urgência, vulnerabilidade, pedido de análise jurídica ou recebimento de arquivo provocam transferência imediata para a equipe. O valor nominal do salário-mínimo não deve ser fixado em mensagens automáticas: quando essa informação for necessária, consulte uma fonte oficial atualizada no momento do atendimento.
 
+### Operação, segurança e governança
+
+O painel reúne conversas, origem do lead, consentimento versionado, triagem estruturada, etiquetas, observações internas e assunção do atendimento. Ao assumir uma conversa ou enviar a primeira resposta humana, o bot é desativado para aquele contato.
+
+Mensagens são verificadas antes do envio. Promessas de resultado, valores fixos de benefício, prazos garantidos, pedidos de senha ou código e afirmações jurídicas fora da base vigente são bloqueados e registrados para revisão. A base jurídica exige fonte, endereço, responsável pela aprovação, área, data de revisão e status.
+
+Os perfis disponíveis em `ADMIN_ROLE` são `manager`, `attendant` e `viewer`. Exclusão, portabilidade, correção de dados, incidentes e gestão da base jurídica exigem `manager`. Configure `DATA_ENCRYPTION_KEY` com um segredo exclusivo; no Blueprint do Render ele é gerado automaticamente. Respostas sensíveis e detalhes de correção ficam criptografados no banco.
+
+As métricas operacionais incluem transferências humanas, tempo até a primeira resposta, abandonos, respostas bloqueadas, consentimentos recusados, reclamações, incidentes, respostas incorretas e leads desalinhados.
+
 ## Testes
 
 ```bash
@@ -205,7 +215,8 @@ python scripts/smoke_test.py
 
 O smoke test usa banco e uploads temporários, cobre HTML e SEO básico, cabeçalhos, compressão, login com
 CSRF, publicação segura de artigos, idempotência de leads e webhooks, validação de arquivos, mídia privada,
-controles do chat, exclusão de dados e revogação da sessão, e remove os artefatos ao final.
+controles do chat, assunção humana, etiquetas, observações, bloqueio de respostas, base jurídica, incidentes,
+solicitações LGPD, exclusão de dados e revogação da sessão, e remove os artefatos ao final.
 
 ## Publicar artigos
 

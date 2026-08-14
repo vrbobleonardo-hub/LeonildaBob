@@ -11,6 +11,12 @@ import requests
 
 from . import db
 from .settings import BRAZILIAN_AREA_CODES, settings
+from .triage import (
+    detect_flow,
+    record_immediate_handoff,
+    structured_triage_reply,
+    triage_requires_handoff,
+)
 from .whatsapp_evolution import send_via_evolution, send_via_evolution_media
 from .whatsapp_qr import send_via_qr_bridge as send_via_qr_connector
 
@@ -683,6 +689,8 @@ def _auto_triage_step(history: list[dict[str, Any]]) -> int:
 
 def auto_triage_should_handoff(conversation_id: int) -> bool:
     """Indica quando o relato já tem informação suficiente para revisão humana."""
+    if triage_requires_handoff(conversation_id):
+        return True
     history = db.list_messages(conversation_id, limit=24)
     transcript = " ".join(str(item.get("text") or "") for item in history if item.get("direction") == "in")
     conversation = db.get_conversation(conversation_id) or {}
@@ -712,40 +720,30 @@ def auto_reply_for_inbound(
     inbound = [item for item in history if item.get("direction") == "in" and item.get("text")]
     transcript = " ".join(str(item.get("text") or "") for item in inbound) or text
     area = _triage_area(kind, transcript)
-    step = _auto_triage_step(history) if history else 1
     handoff_reason = _handoff_reason(history, area) if history else None
 
     if handoff_reason:
+        if handoff_reason == "health_consent_refused":
+            structured_triage_reply(conversation_id, text, kind, history)
+        elif conversation_id:
+            record_immediate_handoff(conversation_id, detect_flow(transcript, kind), text)
         return _handoff_reply(handoff_reason)
+    if conversation_id:
+        reply = structured_triage_reply(conversation_id, text, kind, history)
+        if reply:
+            first_automated_reply = not any(
+                item.get("direction") == "out" and item.get("text") for item in history[:-1]
+            )
+            if first_automated_reply:
+                return (
+                    "Olá. Sou o assistente automatizado do Bob Advogados. Vou fazer perguntas curtas "
+                    "para organizar o atendimento, sem substituir a análise de um advogado.\n\n"
+                    f"{reply}"
+                )
+            return reply
     if area == "previdenciario":
-        return _bpc_triage_reply(history) if history else _bpc_consent_prompt()
-
-    if step == 1:
-        return (
-            "Olá. Sou o assistente de atendimento do Bob Advogados. Vou fazer algumas perguntas curtas "
-            "para que a equipe receba seu relato de forma organizada.\n\n"
-            f"{_case_story_question(area)}\n\n"
-            "Não envie senhas, códigos bancários ou dados de cartão por aqui."
-        )
-    if step == 2:
-        return (
-            "Obrigado por explicar. Para situar a equipe: quais são as datas mais importantes, "
-            "o que já foi tentado e qual foi a última resposta da outra parte ou do órgão envolvido?"
-        )
-    if step == 3:
-        return (
-            "Certo. Você possui documentos relacionados ao caso, como contrato, carta, decisão, "
-            "comprovantes, conversas ou laudos? Diga apenas quais possui; a equipe orientará depois "
-            "a forma segura de envio."
-        )
-    if step == 4:
-        return (
-            "Para concluir esta triagem: qual resultado você espera e qual período é melhor para a equipe "
-            "retornar, manhã ou tarde? A análise de viabilidade é individual e os próximos passos serão "
-            "explicados com transparência, sem promessa de resultado."
-        )
+        return _bpc_consent_prompt()
     return (
-        "Perfeito. Seu relato inicial ficou organizado e será encaminhado à equipe para revisão. "
-        "O atendimento humano continuará por este número no período informado. Se surgir um prazo novo "
-        "antes do retorno, avise nesta conversa."
+        "Olá. Sou o assistente automatizado do Bob Advogados. Conte, com suas palavras, o que aconteceu "
+        "e qual é a situação hoje. Não envie senhas, códigos bancários ou dados de cartão por aqui."
     )

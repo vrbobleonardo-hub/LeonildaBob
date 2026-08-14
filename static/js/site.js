@@ -541,6 +541,7 @@ function initAdminChat() {
   const maxUploadBytes = Number(app.dataset.maxUploadBytes) || 25 * 1024 * 1024;
   let activeId = null;
   let activeConversation = null;
+  let activeTriage = [];
   let activeFilter = "all";
   let requestSequence = 0;
   let listRequestSequence = 0;
@@ -655,7 +656,8 @@ function initAdminChat() {
     const initial = escapeHtml(String(name).trim().slice(0, 1) || "?");
     const status = item.status || "open";
     const kind = item.kind || "geral";
-    return `<button type="button" data-conversation-id="${Number(item.id)}" data-status="${escapeHtml(status)}" data-kind="${escapeHtml(kind)}" data-bot="${item.bot_enabled ? "true" : "false"}" aria-pressed="false" class="chat-contact"><span class="chat-contact-avatar">${initial}</span><span class="chat-contact-main"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(item.last_message_preview || "Sem mensagem registrada.")}</small></span><span class="chat-contact-meta"><small>${escapeHtml(labelKind(kind))}</small><small>${item.bot_enabled ? "Bot" : escapeHtml(labelStatus(status))}</small></span></button>`;
+    const labels = Array.isArray(item.labels) ? item.labels.join(",") : "";
+    return `<button type="button" data-conversation-id="${Number(item.id)}" data-status="${escapeHtml(status)}" data-kind="${escapeHtml(kind)}" data-labels="${escapeHtml(labels)}" data-bot="${item.bot_enabled ? "true" : "false"}" aria-pressed="false" class="chat-contact"><span class="chat-contact-avatar">${initial}</span><span class="chat-contact-main"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(item.last_message_preview || "Sem mensagem registrada.")}</small></span><span class="chat-contact-meta"><small>${labels.includes("urgent") ? "Urgente" : escapeHtml(labelKind(kind))}</small><small>${item.assigned_to ? escapeHtml(item.assigned_to) : (item.bot_enabled ? "Bot" : escapeHtml(labelStatus(status)))}</small></span></button>`;
   }
 
   function applyConversationFilter() {
@@ -664,6 +666,7 @@ function initAdminChat() {
     buttons.forEach((button) => {
       const matches = activeFilter === "all"
         || button.dataset.status === activeFilter
+        || (activeFilter === "urgent" && (button.dataset.labels || "").split(",").includes("urgent"))
         || (activeFilter === "bot" && button.dataset.bot === "true");
       button.hidden = !matches;
       if (matches) visible += 1;
@@ -677,23 +680,48 @@ function initAdminChat() {
       detailEl.innerHTML = '<div class="chat-detail-empty"><span>Dados</span><strong>Nenhuma conversa selecionada.</strong><p>Ao selecionar um contato, os dados do atendimento aparecerão aqui.</p></div>';
       return;
     }
+    const labels = new Set(activeConversation.labels || []);
+    const labelOptions = [
+      ["urgent", "Urgente"], ["qualified", "Qualificado"],
+      ["no_documents", "Sem documentos"], ["not_adherent", "Não aderente"],
+      ["complaint", "Reclamação"], ["incorrect_answer", "Resposta incorreta"],
+    ];
+    const triage = activeTriage?.[0];
+    const triageAnswers = (triage?.answers || []).map((answer) => `<div><dt>${escapeHtml(answer.field_key.replaceAll("_", " "))}${answer.is_sensitive ? " · sensível" : ""}</dt><dd>${escapeHtml(answer.value)}</dd></div>`).join("");
+    const notes = (activeConversation.notes || []).map((item) => `<li><p>${escapeHtml(item.note)}</p><small>${escapeHtml(item.author)} · ${escapeHtml(localDate(item.created_at))}</small></li>`).join("");
+    const consent = activeConversation.consent;
+    const attribution = [activeConversation.utm_source, activeConversation.utm_campaign, activeConversation.landing_path || activeConversation.source_path].filter(Boolean).join(" · ") || "Acesso direto ou origem não registrada";
     detailEl.innerHTML = `
-      <article class="chat-detail-card">
+      <section class="chat-detail-section">
         <span class="chat-detail-status">${escapeHtml(labelStatus(activeConversation.status))}</span>
         <h3>${escapeHtml(activeConversation.name || "Contato sem nome")}</h3>
         <dl>
           <div><dt>WhatsApp</dt><dd>${escapeHtml(activeConversation.phone || "Não informado")}</dd></div>
           <div><dt>Área</dt><dd>${escapeHtml(labelKind(activeConversation.kind))}</dd></div>
           <div><dt>Automação</dt><dd>${activeConversation.bot_enabled ? "Ativa" : "Desativada"}</dd></div>
+          <div><dt>Responsável</dt><dd>${escapeHtml(activeConversation.assigned_to || "Ainda não assumido")}</dd></div>
+          <div><dt>Origem do lead</dt><dd>${escapeHtml(attribution)}</dd></div>
           <div><dt>Primeiro registro</dt><dd>${escapeHtml(localDate(activeConversation.created_at))}</dd></div>
           <div><dt>Última atividade</dt><dd>${escapeHtml(localDate(activeConversation.updated_at || activeConversation.last_message_at))}</dd></div>
-          <div><dt>ID do contato</dt><dd>${escapeHtml(activeConversation.source_lead_id || activeConversation.id)}</dd></div>
         </dl>
-      </article>
-      <article class="chat-detail-card">
-        <h3>Próxima ação</h3>
-        <p>Verifique documentos, responda com clareza e mantenha o status da conversa atualizado.</p>
-      </article>
+      </section>
+      <section class="chat-detail-section">
+        <h3>Classificação</h3>
+        <div class="conversation-labels">${labelOptions.map(([value, label]) => `<button type="button" data-conversation-label="${value}" aria-pressed="${labels.has(value)}">${label}</button>`).join("")}</div>
+      </section>
+      <section class="chat-detail-section">
+        <h3>Consentimento</h3>
+        ${consent ? `<p><strong>${consent.status === "granted" ? "Autorizado" : consent.status === "refused" ? "Recusado" : "Revogado"}</strong><br>${escapeHtml(consent.purpose)}<br><small>Versão ${escapeHtml(consent.version)} · ${escapeHtml(localDate(consent.created_at))}</small></p>` : `<p>Nenhum consentimento sensível registrado. Consentimento do formulário: ${activeConversation.lead_consent ? "sim" : "não registrado"}.</p>`}
+      </section>
+      <section class="chat-detail-section">
+        <h3>Triagem estruturada</h3>
+        ${triage ? `<p class="triage-state">${escapeHtml(triage.flow)} · ${escapeHtml(triage.status)}</p>${triageAnswers ? `<dl>${triageAnswers}</dl>` : "<p>Aguardando respostas.</p>"}` : "<p>Fluxo ainda não iniciado.</p>"}
+      </section>
+      <section class="chat-detail-section">
+        <h3>Observações internas</h3>
+        <form data-conversation-note-form><textarea name="note" rows="3" maxlength="2000" placeholder="Visível somente para a equipe" required></textarea><button type="submit">Registrar observação</button></form>
+        <ul class="internal-notes">${notes || "<li>Nenhuma observação interna.</li>"}</ul>
+      </section>
     `;
   }
 
@@ -761,6 +789,7 @@ function initAdminChat() {
     if (!response.ok || !result.ok) throw new Error(formatApiError(result));
     activeId = Number(id);
     activeConversation = result.conversation;
+    activeTriage = result.triage || [];
     list.querySelectorAll("[data-conversation-id]").forEach((button) => {
       const selected = Number(button.dataset.conversationId) === activeId;
       button.classList.toggle("is-active", selected);
@@ -868,6 +897,47 @@ function initAdminChat() {
       note.textContent = formatApiError(result);
     }
   });
+  controls?.querySelector("[data-take-over]")?.addEventListener("click", async () => {
+    const response = await adminFetch(`/api/admin/conversations/${activeId}/take-over`, { method: "POST" });
+    const result = await response.json();
+    if (response.ok) {
+      activeConversation = result.conversation;
+      note.textContent = "Atendimento assumido. A automação foi interrompida.";
+      updateControls();
+      await loadConversationList({ quiet: true });
+    } else note.textContent = formatApiError(result);
+  });
+
+  detailEl?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-conversation-label]");
+    if (!button || !activeId) return;
+    button.disabled = true;
+    const enabled = button.getAttribute("aria-pressed") !== "true";
+    try {
+      const response = await adminFetch(`/api/admin/conversations/${activeId}/labels`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: button.dataset.conversationLabel, enabled }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(formatApiError(result));
+      activeConversation.labels = result.labels;
+      renderConversationDetail();
+      await loadConversationList({ quiet: true });
+    } catch (error) { note.textContent = error.message; }
+  });
+
+  detailEl?.addEventListener("submit", async (event) => {
+    const noteForm = event.target.closest("[data-conversation-note-form]");
+    if (!noteForm || !activeId) return;
+    event.preventDefault();
+    const value = String(new FormData(noteForm).get("note") || "").trim();
+    const response = await adminFetch(`/api/admin/conversations/${activeId}/notes`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note: value }),
+    });
+    const result = await response.json();
+    if (response.ok) await loadMessages(activeId, { quiet: true });
+    else note.textContent = formatApiError(result);
+  });
   controls?.querySelector("[data-close-conversation]")?.addEventListener("click", async () => {
     const status = activeConversation.status === "open" ? "closed" : "open";
     const response = await adminFetch(`/api/admin/conversations/${activeId}/controls`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
@@ -933,6 +1003,147 @@ function initAdminChat() {
       privacyNote.textContent = "Não foi possível concluir a exclusão.";
     } finally {
       submit.disabled = false;
+    }
+  });
+
+  const privacyExportForm = app.querySelector("[data-privacy-export]");
+  privacyExportForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const phone = String(new FormData(privacyExportForm).get("phone") || "").trim();
+    const exportNote = privacyExportForm.querySelector("[data-privacy-export-note]");
+    const submit = privacyExportForm.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    try {
+      const response = await adminFetch(`/api/admin/privacy/export?phone=${encodeURIComponent(phone)}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(formatApiError(result));
+      const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `dados-titular-${phone.replace(/\D/g, "")}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      exportNote.textContent = "Relatório gerado e solicitação de acesso registrada.";
+    } catch (error) {
+      exportNote.textContent = error.message || "Não foi possível gerar o relatório.";
+    } finally { submit.disabled = false; }
+  });
+
+  const privacyCorrectionForm = app.querySelector("[data-privacy-correction]");
+  privacyCorrectionForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = Object.fromEntries(new FormData(privacyCorrectionForm).entries());
+    const correctionNote = privacyCorrectionForm.querySelector("[data-privacy-correction-note]");
+    const submit = privacyCorrectionForm.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    try {
+      const response = await adminFetch("/api/admin/privacy/correction", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(formatApiError(result));
+      privacyCorrectionForm.reset();
+      correctionNote.textContent = `Solicitação #${result.request_id} registrada para tratamento.`;
+      const listEl = app.querySelector("[data-privacy-request-list]");
+      listEl?.querySelector(".admin-empty")?.remove();
+      listEl?.insertAdjacentHTML("beforeend", `<article data-privacy-request-id="${Number(result.request_id)}"><div><span>Correção</span><strong>${escapeHtml(payload.phone)}</strong><p>${escapeHtml(payload.details)}</p></div><small>open · agora</small><button type="button" data-complete-privacy-request="${Number(result.request_id)}">Marcar concluída</button></article>`);
+    } catch (error) {
+      correctionNote.textContent = error.message || "Não foi possível registrar a correção.";
+    } finally { submit.disabled = false; }
+  });
+
+  const knowledgeForm = app.querySelector("[data-knowledge-form]");
+  knowledgeForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const knowledgeNote = knowledgeForm.querySelector("[data-knowledge-note]");
+    const submit = knowledgeForm.querySelector('button[type="submit"]');
+    const payload = Object.fromEntries(new FormData(knowledgeForm).entries());
+    submit.disabled = true;
+    try {
+      const response = await adminFetch("/api/admin/knowledge", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(formatApiError(result));
+      knowledgeForm.reset();
+      knowledgeNote.textContent = "Conteúdo registrado com fonte, aprovação e prazo de revisão.";
+      const listEl = app.querySelector("[data-knowledge-list]");
+      listEl?.querySelector(".admin-empty")?.remove();
+      listEl?.insertAdjacentHTML("afterbegin", `<article><div><span>${escapeHtml(result.item.area)}</span><strong>${escapeHtml(result.item.title)}</strong></div><p>${escapeHtml(result.item.source_title)} · revisão ${escapeHtml(result.item.review_due_at)}</p><div class="knowledge-status"><small>Vigente · aprovada por ${escapeHtml(result.item.approved_by)}</small><select data-knowledge-status="${Number(result.item.id)}" aria-label="Situação de ${escapeHtml(result.item.title)}"><option value="current" selected>Vigente</option><option value="superseded">Superada</option><option value="do_not_use">Não usar</option></select></div></article>`);
+    } catch (error) { knowledgeNote.textContent = error.message; }
+    finally { submit.disabled = false; }
+  });
+
+  const incidentForm = app.querySelector("[data-incident-form]");
+  incidentForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const incidentNote = incidentForm.querySelector("[data-incident-note]");
+    const submit = incidentForm.querySelector('button[type="submit"]');
+    const payload = Object.fromEntries(new FormData(incidentForm).entries());
+    submit.disabled = true;
+    try {
+      const response = await adminFetch("/api/admin/privacy/incidents", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(formatApiError(result));
+      incidentForm.reset();
+      incidentNote.textContent = "Incidente registrado para acompanhamento.";
+      const listEl = app.querySelector("[data-incident-list]");
+      listEl?.querySelector(".admin-empty")?.remove();
+      listEl?.insertAdjacentHTML("afterbegin", `<article data-incident-id="${Number(result.item.id)}"><strong>${escapeHtml(result.item.severity.toUpperCase())}</strong><p>${escapeHtml(result.item.summary)}</p><div><small>open · ${escapeHtml(localDate(result.item.created_at))}</small><button type="button" data-resolve-incident="${Number(result.item.id)}">Marcar resolvido</button></div></article>`);
+    } catch (error) { incidentNote.textContent = error.message; }
+    finally { submit.disabled = false; }
+  });
+
+  app.addEventListener("change", async (event) => {
+    const select = event.target.closest("[data-knowledge-status]");
+    if (!select) return;
+    select.disabled = true;
+    try {
+      const response = await adminFetch(`/api/admin/knowledge/${select.dataset.knowledgeStatus}/status`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: select.value }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(formatApiError(result));
+      select.closest(".knowledge-status")?.querySelector("small")?.replaceChildren(document.createTextNode(`${select.options[select.selectedIndex].text} · aprovada por ${result.item.approved_by}`));
+    } catch (error) {
+      window.alert(error.message || "Não foi possível atualizar a base.");
+    } finally { select.disabled = false; }
+  });
+
+  app.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-resolve-incident]");
+    if (!button) return;
+    button.disabled = true;
+    try {
+      const response = await adminFetch(`/api/admin/privacy/incidents/${button.dataset.resolveIncident}/resolve`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(formatApiError(result));
+      const wrapper = button.parentElement;
+      wrapper.querySelector("small").textContent = `resolved · ${localDate(result.item.resolved_at)}`;
+      button.remove();
+    } catch (error) {
+      window.alert(error.message || "Não foi possível resolver o incidente.");
+      button.disabled = false;
+    }
+  });
+
+  app.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-complete-privacy-request]");
+    if (!button) return;
+    button.disabled = true;
+    try {
+      const response = await adminFetch(`/api/admin/privacy/requests/${button.dataset.completePrivacyRequest}/complete`, { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(formatApiError(result));
+      const article = button.closest("article");
+      article.querySelector("small").textContent = `completed · ${localDate(result.item.completed_at)}`;
+      button.remove();
+    } catch (error) {
+      window.alert(error.message || "Não foi possível concluir a solicitação.");
+      button.disabled = false;
     }
   });
 

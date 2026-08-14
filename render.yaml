@@ -30,9 +30,13 @@ services:
         value: whatsapp-media
       - key: ADMIN_USERNAME
         value: leonilda bob
+      - key: ADMIN_ROLE
+        value: manager
       - key: ADMIN_PASSWORD_HASH
         sync: false
       - key: ADMIN_SESSION_SECRET
+        generateValue: true
+      - key: DATA_ENCRYPTION_KEY
         generateValue: true
       - key: METRICS_SALT
         generateValue: true

@@ -90,6 +90,10 @@ CREATE TABLE IF NOT EXISTS whatsapp_conversations (
     last_message_preview TEXT,
     bot_enabled INTEGER NOT NULL DEFAULT 1,
     last_auto_reply_at TEXT,
+    assigned_to TEXT,
+    taken_over_at TEXT,
+    first_human_response_at TEXT,
+    last_inbound_at TEXT,
     source_lead_id BIGINT REFERENCES leads(id)
 );
 
@@ -202,6 +206,110 @@ CREATE TABLE IF NOT EXISTS whatsapp_qr_auth_store (
     file_data TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS conversation_notes (
+    id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES whatsapp_conversations(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    author TEXT NOT NULL,
+    note TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS conversation_labels (
+    conversation_id BIGINT NOT NULL REFERENCES whatsapp_conversations(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    PRIMARY KEY (conversation_id, label)
+);
+
+CREATE TABLE IF NOT EXISTS consent_records (
+    id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT REFERENCES whatsapp_conversations(id) ON DELETE CASCADE,
+    lead_id BIGINT REFERENCES leads(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    consent_type TEXT NOT NULL,
+    version TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    status TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_message_id BIGINT
+);
+
+CREATE TABLE IF NOT EXISTS triage_sessions (
+    id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES whatsapp_conversations(id) ON DELETE CASCADE,
+    flow TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    current_step TEXT,
+    started_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT,
+    UNIQUE (conversation_id, flow)
+);
+
+CREATE TABLE IF NOT EXISTS triage_answers (
+    id BIGSERIAL PRIMARY KEY,
+    session_id BIGINT NOT NULL REFERENCES triage_sessions(id) ON DELETE CASCADE,
+    field_key TEXT NOT NULL,
+    value_encrypted TEXT NOT NULL,
+    is_sensitive INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    UNIQUE (session_id, field_key)
+);
+
+CREATE TABLE IF NOT EXISTS safety_events (
+    id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT REFERENCES whatsapp_conversations(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    rule_codes TEXT NOT NULL,
+    blocked_text_hash TEXT NOT NULL,
+    routed_to_human INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS legal_knowledge (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    source_title TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    approved_by TEXT NOT NULL,
+    area TEXT NOT NULL,
+    review_due_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'current'
+);
+
+CREATE TABLE IF NOT EXISTS privacy_incidents (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    reported_by TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    resolved_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS privacy_requests (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    request_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    completed_at TEXT,
+    handled_by TEXT,
+    details_encrypted TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_notes_conversation ON conversation_notes(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversation_labels_label ON conversation_labels(label, conversation_id);
+CREATE INDEX IF NOT EXISTS idx_consent_records_conversation ON consent_records(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_triage_sessions_conversation ON triage_sessions(conversation_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_safety_events_created ON safety_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_legal_knowledge_status ON legal_knowledge(status, review_due_at);
+CREATE INDEX IF NOT EXISTS idx_privacy_requests_status ON privacy_requests(status, created_at DESC);
 """
 
 
@@ -239,6 +347,7 @@ class ConnectionAdapter:
                 "schema_migrations",
                 "whatsapp_contact_preferences",
                 "whatsapp_qr_auth_store",
+                "conversation_labels",
             }
             and " RETURNING " not in sql.upper()
         )
@@ -429,6 +538,10 @@ def init_db() -> None:
                 last_message_preview TEXT,
                 bot_enabled INTEGER NOT NULL DEFAULT 1,
                 last_auto_reply_at TEXT,
+                assigned_to TEXT,
+                taken_over_at TEXT,
+                first_human_response_at TEXT,
+                last_inbound_at TEXT,
                 source_lead_id INTEGER,
                 FOREIGN KEY (source_lead_id) REFERENCES leads(id)
             );
@@ -519,6 +632,109 @@ def init_db() -> None:
                 applied_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS conversation_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                author TEXT NOT NULL,
+                note TEXT NOT NULL,
+                FOREIGN KEY (conversation_id) REFERENCES whatsapp_conversations(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS conversation_labels (
+                conversation_id INTEGER NOT NULL,
+                label TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                PRIMARY KEY (conversation_id, label),
+                FOREIGN KEY (conversation_id) REFERENCES whatsapp_conversations(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS consent_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id INTEGER,
+                lead_id INTEGER,
+                created_at TEXT NOT NULL,
+                consent_type TEXT NOT NULL,
+                version TEXT NOT NULL,
+                purpose TEXT NOT NULL,
+                status TEXT NOT NULL,
+                source TEXT NOT NULL,
+                source_message_id INTEGER,
+                FOREIGN KEY (conversation_id) REFERENCES whatsapp_conversations(id) ON DELETE CASCADE,
+                FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS triage_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id INTEGER NOT NULL,
+                flow TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                current_step TEXT,
+                started_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                completed_at TEXT,
+                UNIQUE (conversation_id, flow),
+                FOREIGN KEY (conversation_id) REFERENCES whatsapp_conversations(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS triage_answers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                field_key TEXT NOT NULL,
+                value_encrypted TEXT NOT NULL,
+                is_sensitive INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                UNIQUE (session_id, field_key),
+                FOREIGN KEY (session_id) REFERENCES triage_sessions(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS safety_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id INTEGER,
+                created_at TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                rule_codes TEXT NOT NULL,
+                blocked_text_hash TEXT NOT NULL,
+                routed_to_human INTEGER NOT NULL DEFAULT 1,
+                FOREIGN KEY (conversation_id) REFERENCES whatsapp_conversations(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS legal_knowledge (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                source_title TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                approved_by TEXT NOT NULL,
+                area TEXT NOT NULL,
+                review_due_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'current'
+            );
+
+            CREATE TABLE IF NOT EXISTS privacy_incidents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                reported_by TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                resolved_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS privacy_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                request_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                completed_at TEXT,
+                handled_by TEXT,
+                details_encrypted TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at);
             CREATE INDEX IF NOT EXISTS idx_leads_kind ON leads(kind);
             CREATE INDEX IF NOT EXISTS idx_outbox_status ON whatsapp_outbox(status);
@@ -528,10 +744,17 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_conversation ON whatsapp_messages(conversation_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_webhook_events_pending ON whatsapp_webhook_events(status, next_attempt_at);
             CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON page_views(created_at);
+            CREATE INDEX IF NOT EXISTS idx_privacy_requests_status ON privacy_requests(status, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_page_views_visitor ON page_views(visitor_id, session_id);
             CREATE INDEX IF NOT EXISTS idx_admin_sessions_expiry ON admin_sessions(expires_at, revoked_at);
             CREATE INDEX IF NOT EXISTS idx_blog_posts_public ON blog_posts(status, published_at DESC);
             CREATE INDEX IF NOT EXISTS idx_blog_posts_category ON blog_posts(category);
+            CREATE INDEX IF NOT EXISTS idx_conversation_notes_conversation ON conversation_notes(conversation_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_conversation_labels_label ON conversation_labels(label, conversation_id);
+            CREATE INDEX IF NOT EXISTS idx_consent_records_conversation ON consent_records(conversation_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_triage_sessions_conversation ON triage_sessions(conversation_id, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_safety_events_created ON safety_events(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_legal_knowledge_status ON legal_knowledge(status, review_due_at);
             """
         )
         if not conn.postgres:
@@ -593,8 +816,13 @@ def init_db() -> None:
             {
                 "case_key": "TEXT",
                 "last_auto_reply_at": "TEXT",
+                "assigned_to": "TEXT",
+                "taken_over_at": "TEXT",
+                "first_human_response_at": "TEXT",
+                "last_inbound_at": "TEXT",
             },
         )
+        ensure_columns(conn, "privacy_requests", {"details_encrypted": "TEXT"})
         conn.execute("UPDATE whatsapp_conversations SET case_key = 'legacy-' || id WHERE case_key IS NULL OR case_key = ''")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_request_key ON leads(request_key) WHERE request_key IS NOT NULL")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_case_key ON whatsapp_conversations(case_key)")
@@ -923,6 +1151,21 @@ def create_lead_bundle(data: dict[str, Any], first_message: str) -> tuple[int, i
                 lead_id,
             ),
         )
+        conn.execute(
+            """
+            INSERT INTO consent_records(
+                conversation_id, lead_id, created_at, consent_type, version,
+                purpose, status, source, source_message_id
+            ) VALUES (?, ?, ?, 'site_contact', 'site-contact-v1', ?, ?, 'website_form', NULL)
+            """,
+            (
+                int(conversation_cursor.lastrowid),
+                lead_id,
+                utc_now(),
+                "Receber contato do escritório pelo WhatsApp e tratar os dados enviados para atendimento.",
+                "granted" if data.get("consent") else "refused",
+            ),
+        )
         return lead_id, int(outbox_cursor.lastrowid), int(conversation_cursor.lastrowid), True
 
 
@@ -1042,10 +1285,11 @@ def record_whatsapp_message(
         conn.execute(
             """
             UPDATE whatsapp_conversations
-            SET updated_at = ?, last_message_at = ?, last_message_preview = ?
+            SET updated_at = ?, last_message_at = ?, last_message_preview = ?,
+                last_inbound_at = CASE WHEN ? = 'in' THEN ? ELSE last_inbound_at END
             WHERE id = ?
             """,
-            (now, now, preview, conversation_id),
+            (now, now, preview, direction, now, conversation_id),
         )
         return int(cursor.lastrowid)
 
@@ -1117,7 +1361,8 @@ def list_conversations(limit: int = 80, offset: int = 0, query: str = "") -> lis
     with connect() as conn:
         sql = """
             SELECT id, created_at, updated_at, phone, name, kind, status,
-                   last_message_at, last_message_preview, bot_enabled, source_lead_id
+                   last_message_at, last_message_preview, bot_enabled, source_lead_id,
+                   assigned_to, taken_over_at, first_human_response_at, last_inbound_at
             FROM whatsapp_conversations
         """
         params: list[Any] = []
@@ -1128,22 +1373,65 @@ def list_conversations(limit: int = 80, offset: int = 0, query: str = "") -> lis
             params.extend([needle, needle, needle])
         sql += " ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
-        rows = conn.execute(sql, params).fetchall()
-        return [dict(row) for row in rows]
+        rows = [dict(row) for row in conn.execute(sql, params).fetchall()]
+        for item in rows:
+            labels = conn.execute(
+                "SELECT label FROM conversation_labels WHERE conversation_id = ? ORDER BY label",
+                (item["id"],),
+            ).fetchall()
+            item["labels"] = [str(label["label"]) for label in labels]
+        return rows
 
 
 def get_conversation(conversation_id: int) -> dict[str, Any] | None:
     with connect() as conn:
         row = conn.execute(
             """
-            SELECT id, created_at, updated_at, phone, name, kind, status,
-                   last_message_at, last_message_preview, bot_enabled, source_lead_id
-            FROM whatsapp_conversations
-            WHERE id = ?
+            SELECT c.id, c.created_at, c.updated_at, c.phone, c.name, c.kind, c.status,
+                   c.last_message_at, c.last_message_preview, c.bot_enabled, c.source_lead_id,
+                   c.assigned_to, c.taken_over_at, c.first_human_response_at, c.last_inbound_at,
+                   l.consent AS lead_consent, l.source_path, l.landing_path, l.referrer,
+                   l.utm_source, l.utm_medium, l.utm_campaign, l.utm_content, l.utm_term,
+                   l.gclid, l.fbclid
+            FROM whatsapp_conversations c
+            LEFT JOIN leads l ON l.id = c.source_lead_id
+            WHERE c.id = ?
             """,
             (conversation_id,),
         ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        result = dict(row)
+        result["labels"] = [
+            str(item["label"])
+            for item in conn.execute(
+                "SELECT label FROM conversation_labels WHERE conversation_id = ? ORDER BY label",
+                (conversation_id,),
+            ).fetchall()
+        ]
+        result["notes"] = [
+            dict(item)
+            for item in conn.execute(
+                """
+                SELECT id, created_at, author, note
+                FROM conversation_notes
+                WHERE conversation_id = ?
+                ORDER BY id DESC LIMIT 30
+                """,
+                (conversation_id,),
+            ).fetchall()
+        ]
+        consent = conn.execute(
+            """
+            SELECT id, created_at, consent_type, version, purpose, status, source
+            FROM consent_records
+            WHERE conversation_id = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (conversation_id,),
+        ).fetchone()
+        result["consent"] = dict(consent) if consent else None
+        return result
 
 
 def list_messages(conversation_id: int, limit: int = 160) -> list[dict[str, Any]]:
@@ -1383,6 +1671,421 @@ def update_conversation_controls(
         return dict(updated) if updated else None
 
 
+CONVERSATION_LABELS = frozenset(
+    {"urgent", "qualified", "no_documents", "not_adherent", "complaint", "incorrect_answer"}
+)
+
+
+def take_over_conversation(conversation_id: int, username: str) -> dict[str, Any] | None:
+    now = utc_now()
+    with connect() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE whatsapp_conversations
+            SET assigned_to = ?, taken_over_at = COALESCE(taken_over_at, ?),
+                bot_enabled = 0, status = 'open', updated_at = ?
+            WHERE id = ?
+            """,
+            (username[:120], now, now, conversation_id),
+        )
+        if not cursor.rowcount:
+            return None
+    return get_conversation(conversation_id)
+
+
+def mark_human_response(conversation_id: int, username: str) -> None:
+    now = utc_now()
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE whatsapp_conversations
+            SET assigned_to = COALESCE(assigned_to, ?),
+                taken_over_at = COALESCE(taken_over_at, ?),
+                first_human_response_at = COALESCE(first_human_response_at, ?),
+                bot_enabled = 0, updated_at = ?
+            WHERE id = ?
+            """,
+            (username[:120], now, now, now, conversation_id),
+        )
+
+
+def set_conversation_label(conversation_id: int, label: str, enabled: bool, username: str) -> list[str]:
+    if label not in CONVERSATION_LABELS:
+        raise ValueError("Etiqueta de conversa inválida.")
+    with connect() as conn:
+        if not conn.execute(
+            "SELECT id FROM whatsapp_conversations WHERE id = ?", (conversation_id,)
+        ).fetchone():
+            raise LookupError("Conversa não encontrada.")
+        if enabled:
+            if conn.postgres:
+                conn.execute(
+                    """
+                    INSERT INTO conversation_labels(conversation_id, label, created_at, created_by)
+                    VALUES (?, ?, ?, ?) ON CONFLICT (conversation_id, label) DO NOTHING
+                    """,
+                    (conversation_id, label, utc_now(), username[:120]),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO conversation_labels(conversation_id, label, created_at, created_by)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (conversation_id, label, utc_now(), username[:120]),
+                )
+        else:
+            conn.execute(
+                "DELETE FROM conversation_labels WHERE conversation_id = ? AND label = ?",
+                (conversation_id, label),
+            )
+        rows = conn.execute(
+            "SELECT label FROM conversation_labels WHERE conversation_id = ? ORDER BY label",
+            (conversation_id,),
+        ).fetchall()
+        return [str(row["label"]) for row in rows]
+
+
+def add_conversation_note(conversation_id: int, author: str, note: str) -> dict[str, Any]:
+    clean_note = " ".join((note or "").split())
+    if not 2 <= len(clean_note) <= 2_000:
+        raise ValueError("A observação deve ter entre 2 e 2.000 caracteres.")
+    with connect() as conn:
+        if not conn.execute(
+            "SELECT id FROM whatsapp_conversations WHERE id = ?", (conversation_id,)
+        ).fetchone():
+            raise LookupError("Conversa não encontrada.")
+        now = utc_now()
+        cursor = conn.execute(
+            """
+            INSERT INTO conversation_notes(conversation_id, created_at, author, note)
+            VALUES (?, ?, ?, ?)
+            """,
+            (conversation_id, now, author[:120], clean_note),
+        )
+        return {"id": int(cursor.lastrowid), "created_at": now, "author": author, "note": clean_note}
+
+
+def record_consent(
+    *,
+    conversation_id: int | None,
+    lead_id: int | None,
+    consent_type: str,
+    version: str,
+    purpose: str,
+    status: str,
+    source: str,
+    source_message_id: int | None = None,
+) -> int:
+    if status not in {"granted", "refused", "revoked"}:
+        raise ValueError("Status de consentimento inválido.")
+    with connect() as conn:
+        if source_message_id and conversation_id:
+            existing = conn.execute(
+                """
+                SELECT id FROM consent_records
+                WHERE conversation_id = ? AND consent_type = ? AND source_message_id = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (conversation_id, consent_type, source_message_id),
+            ).fetchone()
+            if existing:
+                return int(existing["id"])
+        cursor = conn.execute(
+            """
+            INSERT INTO consent_records(
+                conversation_id, lead_id, created_at, consent_type, version,
+                purpose, status, source, source_message_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                conversation_id,
+                lead_id,
+                utc_now(),
+                consent_type[:80],
+                version[:80],
+                purpose[:800],
+                status,
+                source[:80],
+                source_message_id,
+            ),
+        )
+        return int(cursor.lastrowid)
+
+
+def get_or_create_triage_session(conversation_id: int, flow: str, first_step: str) -> dict[str, Any]:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM triage_sessions WHERE conversation_id = ? AND flow = ?",
+            (conversation_id, flow),
+        ).fetchone()
+        if row:
+            return dict(row)
+        now = utc_now()
+        cursor = conn.execute(
+            """
+            INSERT INTO triage_sessions(
+                conversation_id, flow, status, current_step, started_at, updated_at
+            ) VALUES (?, ?, 'active', ?, ?, ?)
+            """,
+            (conversation_id, flow[:80], first_step[:80], now, now),
+        )
+        return dict(
+            conn.execute("SELECT * FROM triage_sessions WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        )
+
+
+def active_triage_session(conversation_id: int) -> dict[str, Any] | None:
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM triage_sessions
+            WHERE conversation_id = ? AND status = 'active'
+            ORDER BY id DESC LIMIT 1
+            """,
+            (conversation_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def save_triage_answer(
+    session_id: int,
+    field_key: str,
+    value: str,
+    *,
+    is_sensitive: bool,
+    next_step: str | None,
+    completed: bool = False,
+) -> None:
+    from .governance import encrypt_sensitive
+
+    encrypted = encrypt_sensitive(value.strip()[:4_000])
+    now = utc_now()
+    with connect() as conn:
+        if conn.postgres:
+            conn.execute(
+                """
+                INSERT INTO triage_answers(session_id, field_key, value_encrypted, is_sensitive, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (session_id, field_key)
+                DO UPDATE SET value_encrypted = EXCLUDED.value_encrypted,
+                              is_sensitive = EXCLUDED.is_sensitive,
+                              created_at = EXCLUDED.created_at
+                """,
+                (session_id, field_key[:80], encrypted, int(is_sensitive), now),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO triage_answers(session_id, field_key, value_encrypted, is_sensitive, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(session_id, field_key)
+                DO UPDATE SET value_encrypted = excluded.value_encrypted,
+                              is_sensitive = excluded.is_sensitive,
+                              created_at = excluded.created_at
+                """,
+                (session_id, field_key[:80], encrypted, int(is_sensitive), now),
+            )
+        conn.execute(
+            """
+            UPDATE triage_sessions
+            SET current_step = ?, status = ?, updated_at = ?, completed_at = ?
+            WHERE id = ?
+            """,
+            (
+                next_step,
+                "completed" if completed else "active",
+                now,
+                now if completed else None,
+                session_id,
+            ),
+        )
+
+
+def triage_summary(conversation_id: int) -> list[dict[str, Any]]:
+    from .governance import decrypt_sensitive
+
+    with connect() as conn:
+        sessions = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT * FROM triage_sessions WHERE conversation_id = ? ORDER BY id DESC",
+                (conversation_id,),
+            ).fetchall()
+        ]
+        for session in sessions:
+            answers = conn.execute(
+                """
+                SELECT field_key, value_encrypted, is_sensitive, created_at
+                FROM triage_answers WHERE session_id = ? ORDER BY id
+                """,
+                (session["id"],),
+            ).fetchall()
+            session["answers"] = [
+                {
+                    "field_key": answer["field_key"],
+                    "value": decrypt_sensitive(str(answer["value_encrypted"])),
+                    "is_sensitive": bool(answer["is_sensitive"]),
+                    "created_at": answer["created_at"],
+                }
+                for answer in answers
+            ]
+        return sessions
+
+
+def record_safety_event(
+    conversation_id: int | None,
+    direction: str,
+    reasons: list[str] | tuple[str, ...],
+    blocked_text: str,
+) -> int:
+    digest = hashlib.sha256(blocked_text.encode("utf-8")).hexdigest()
+    with connect() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO safety_events(
+                conversation_id, created_at, direction, rule_codes,
+                blocked_text_hash, routed_to_human
+            ) VALUES (?, ?, ?, ?, ?, 1)
+            """,
+            (conversation_id, utc_now(), direction[:20], json.dumps(list(reasons)), digest),
+        )
+        if conversation_id:
+            conn.execute(
+                "UPDATE whatsapp_conversations SET bot_enabled = 0, updated_at = ? WHERE id = ?",
+                (utc_now(), conversation_id),
+            )
+        return int(cursor.lastrowid)
+
+
+def list_legal_knowledge() -> list[dict[str, Any]]:
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM legal_knowledge ORDER BY status, review_due_at, id DESC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def legal_claim_supported(text: str) -> bool:
+    """Require meaningful term overlap with a current, in-review knowledge item."""
+    from .governance import _normalized
+
+    ignored = {
+        "para", "como", "mais", "pela", "pelo", "com", "sem", "uma", "seu", "sua",
+        "que", "dos", "das", "isso", "este", "esta", "voce", "sobre", "caso", "direito",
+    }
+    claim_terms = {
+        term for term in re.findall(r"[a-z0-9]{4,}", _normalized(text)) if term not in ignored
+    }
+    if not claim_terms:
+        return True
+    today = datetime.now(timezone.utc).date().isoformat()
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT title, content, area
+            FROM legal_knowledge
+            WHERE status = 'current' AND review_due_at >= ?
+            """,
+            (today,),
+        ).fetchall()
+    for row in rows:
+        source_terms = set(
+            re.findall(
+                r"[a-z0-9]{4,}",
+                _normalized(f"{row['title']} {row['content']} {row['area']}"),
+            )
+        )
+        if len(claim_terms & source_terms) >= min(2, len(claim_terms)):
+            return True
+    return False
+
+
+def save_legal_knowledge(data: dict[str, Any], approved_by: str) -> dict[str, Any]:
+    status = str(data.get("status") or "current")
+    if status not in {"current", "superseded", "do_not_use"}:
+        raise ValueError("Status da base jurídica inválido.")
+    now = utc_now()
+    with connect() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO legal_knowledge(
+                created_at, updated_at, title, content, source_title, source_url,
+                approved_by, area, review_due_at, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                now,
+                now,
+                str(data["title"]).strip()[:180],
+                str(data["content"]).strip()[:8_000],
+                str(data["source_title"]).strip()[:240],
+                str(data["source_url"]).strip()[:600],
+                approved_by[:120],
+                str(data["area"]).strip()[:80],
+                str(data["review_due_at"]).strip()[:40],
+                status,
+            ),
+        )
+        return dict(conn.execute("SELECT * FROM legal_knowledge WHERE id = ?", (cursor.lastrowid,)).fetchone())
+
+
+def update_legal_knowledge_status(item_id: int, status: str, approved_by: str) -> dict[str, Any] | None:
+    if status not in {"current", "superseded", "do_not_use"}:
+        raise ValueError("Status da base jurídica inválido.")
+    with connect() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE legal_knowledge
+            SET status = ?, approved_by = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (status, approved_by[:120], utc_now(), item_id),
+        )
+        if not cursor.rowcount:
+            return None
+        return dict(conn.execute("SELECT * FROM legal_knowledge WHERE id = ?", (item_id,)).fetchone())
+
+
+def create_privacy_incident(reported_by: str, severity: str, summary: str) -> dict[str, Any]:
+    if severity not in {"low", "medium", "high", "critical"}:
+        raise ValueError("Gravidade inválida.")
+    with connect() as conn:
+        now = utc_now()
+        cursor = conn.execute(
+            """
+            INSERT INTO privacy_incidents(created_at, reported_by, severity, summary, status)
+            VALUES (?, ?, ?, ?, 'open')
+            """,
+            (now, reported_by[:120], severity, summary.strip()[:2_000]),
+        )
+        return dict(conn.execute("SELECT * FROM privacy_incidents WHERE id = ?", (cursor.lastrowid,)).fetchone())
+
+
+def resolve_privacy_incident(incident_id: int, handled_by: str) -> dict[str, Any] | None:
+    now = utc_now()
+    with connect() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE privacy_incidents
+            SET status = 'resolved', resolved_at = ?
+            WHERE id = ? AND status != 'resolved'
+            """,
+            (now, incident_id),
+        )
+        if not cursor.rowcount:
+            existing = conn.execute(
+                "SELECT * FROM privacy_incidents WHERE id = ?", (incident_id,)
+            ).fetchone()
+            return dict(existing) if existing else None
+        item = conn.execute(
+            "SELECT * FROM privacy_incidents WHERE id = ?", (incident_id,)
+        ).fetchone()
+        result = dict(item)
+        result["handled_by"] = handled_by[:120]
+        return result
+
+
 def can_auto_reply(conversation_id: int, cooldown_seconds: int) -> bool:
     with connect() as conn:
         row = conn.execute(
@@ -1544,7 +2247,9 @@ def admin_snapshot(limit: int = 50) -> dict[str, Any]:
         ).fetchall()
         conversations = conn.execute(
             """
-            SELECT id, updated_at, phone, name, kind, status, last_message_preview, bot_enabled
+            SELECT id, created_at, updated_at, phone, name, kind, status,
+                   last_message_preview, bot_enabled, assigned_to, taken_over_at,
+                   first_human_response_at, last_inbound_at
             FROM whatsapp_conversations
             ORDER BY updated_at DESC
             LIMIT ?
@@ -1562,6 +2267,63 @@ def admin_snapshot(limit: int = 50) -> dict[str, Any]:
             """,
             (limit,),
         ).fetchall()
+        conversation_items = [dict(row) for row in conversations]
+        for item in conversation_items:
+            item["labels"] = [
+                str(label["label"])
+                for label in conn.execute(
+                    "SELECT label FROM conversation_labels WHERE conversation_id = ? ORDER BY label",
+                    (item["id"],),
+                ).fetchall()
+            ]
+        operations = conn.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM whatsapp_conversations WHERE taken_over_at IS NOT NULL) AS human_handoffs,
+                (SELECT COUNT(*) FROM safety_events) AS blocked_responses,
+                (SELECT COUNT(*) FROM consent_records WHERE status = 'refused') AS consents_refused,
+                (SELECT COUNT(*) FROM conversation_labels WHERE label = 'complaint') AS complaints,
+                (SELECT COUNT(*) FROM conversation_labels WHERE label = 'incorrect_answer') AS incorrect_answers,
+                (SELECT COUNT(*) FROM conversation_labels WHERE label = 'not_adherent') AS misaligned_leads,
+                (SELECT COUNT(*) FROM privacy_incidents WHERE status = 'open') AS open_incidents
+            """
+        ).fetchone()
+        response_rows = conn.execute(
+            """
+            SELECT taken_over_at, first_human_response_at
+            FROM whatsapp_conversations
+            WHERE taken_over_at IS NOT NULL AND first_human_response_at IS NOT NULL
+            """
+        ).fetchall()
+        response_minutes: list[float] = []
+        for response_row in response_rows:
+            try:
+                start = datetime.fromisoformat(str(response_row["taken_over_at"]))
+                end = datetime.fromisoformat(str(response_row["first_human_response_at"]))
+                response_minutes.append(max(0.0, (end - start).total_seconds() / 60))
+            except (TypeError, ValueError):
+                continue
+        abandoned_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec="seconds")
+        abandoned = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM whatsapp_conversations
+            WHERE status = 'open' AND last_inbound_at IS NOT NULL
+              AND last_inbound_at < ? AND first_human_response_at IS NULL
+            """,
+            (abandoned_cutoff,),
+        ).fetchone()
+        operation_metrics = dict(operations or {})
+        operation_metrics["average_human_response_minutes"] = (
+            round(sum(response_minutes) / len(response_minutes)) if response_minutes else 0
+        )
+        operation_metrics["abandoned_conversations"] = int(abandoned["count"] or 0) if abandoned else 0
+        knowledge = conn.execute(
+            "SELECT * FROM legal_knowledge ORDER BY status, review_due_at, id DESC LIMIT 50"
+        ).fetchall()
+        incidents = conn.execute(
+            "SELECT * FROM privacy_incidents ORDER BY id DESC LIMIT 30"
+        ).fetchall()
         return {
             "totals": dict(totals or {}),
             "outbox": dict(outbox or {}),
@@ -1572,8 +2334,11 @@ def admin_snapshot(limit: int = 50) -> dict[str, Any]:
             "analytics": dict(analytics or {}),
             "funnel": dict(funnel or {}),
             "origins": [dict(row) for row in origins],
-            "conversations": [dict(row) for row in conversations],
+            "conversations": conversation_items,
             "messages": [dict(row) for row in messages],
+            "operations": operation_metrics,
+            "knowledge": [dict(row) for row in knowledge],
+            "incidents": [dict(row) for row in incidents],
         }
 
 
@@ -1709,6 +2474,138 @@ def list_expired_contact_phones() -> list[str]:
             (cutoff, cutoff),
         ).fetchall()
         return [str(row["phone"]) for row in rows]
+
+
+def record_privacy_request(
+    phone: str,
+    request_type: str,
+    handled_by: str,
+    *,
+    status: str = "open",
+    details: str = "",
+) -> int:
+    from .governance import encrypt_sensitive
+
+    if request_type not in {"access", "correction", "deletion"}:
+        raise ValueError("Tipo de solicitação de privacidade inválido.")
+    if status not in {"open", "processing", "completed"}:
+        raise ValueError("Status de solicitação inválido.")
+    now = utc_now()
+    with connect() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO privacy_requests(
+                created_at, phone, request_type, status, completed_at, handled_by,
+                details_encrypted
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                now,
+                encrypt_sensitive(phone),
+                request_type,
+                status,
+                now if status == "completed" else None,
+                handled_by[:120],
+                encrypt_sensitive(details.strip()[:4_000]) if details.strip() else None,
+            ),
+        )
+        return int(cursor.lastrowid)
+
+
+def list_privacy_requests(limit: int = 50) -> list[dict[str, Any]]:
+    from .governance import decrypt_sensitive
+
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, created_at, phone, request_type, status, completed_at,
+                   handled_by, details_encrypted
+            FROM privacy_requests
+            ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'processing' THEN 1 ELSE 2 END,
+                     id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["phone"] = decrypt_sensitive(str(item.get("phone") or ""))
+        item["details"] = decrypt_sensitive(str(item.pop("details_encrypted") or ""))
+        items.append(item)
+    return items
+
+
+def complete_privacy_request(request_id: int, handled_by: str) -> dict[str, Any] | None:
+    now = utc_now()
+    with connect() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE privacy_requests
+            SET status = 'completed', completed_at = ?, handled_by = ?
+            WHERE id = ? AND status != 'completed'
+            """,
+            (now, handled_by[:120], request_id),
+        )
+        if cursor.rowcount == 0:
+            row = conn.execute("SELECT id, status FROM privacy_requests WHERE id = ?", (request_id,)).fetchone()
+            return dict(row) if row else None
+        row = conn.execute(
+            "SELECT id, status, completed_at, handled_by FROM privacy_requests WHERE id = ?",
+            (request_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def export_contact_data(phone: str) -> dict[str, Any]:
+    with connect() as conn:
+        leads = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT id, created_at, kind, area, name, phone, email, message, consent,
+                       source_path, landing_path, utm_source, utm_medium, utm_campaign,
+                       status
+                FROM leads WHERE phone = ? ORDER BY id
+                """,
+                (phone,),
+            ).fetchall()
+        ]
+        conversations = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT id, created_at, updated_at, phone, name, kind, status,
+                       assigned_to, taken_over_at
+                FROM whatsapp_conversations WHERE phone = ? ORDER BY id
+                """,
+                (phone,),
+            ).fetchall()
+        ]
+        for conversation in conversations:
+            conversation_id = int(conversation["id"])
+            conversation["messages"] = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT created_at, direction, message_type, text, media_name, status
+                    FROM whatsapp_messages WHERE conversation_id = ? ORDER BY id
+                    """,
+                    (conversation_id,),
+                ).fetchall()
+            ]
+            conversation["consents"] = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT created_at, consent_type, version, purpose, status, source
+                    FROM consent_records WHERE conversation_id = ? ORDER BY id
+                    """,
+                    (conversation_id,),
+                ).fetchall()
+            ]
+            conversation["triage"] = triage_summary(conversation_id)
+        return {"phone": phone, "leads": leads, "conversations": conversations}
 
 
 def delete_contact_data(phone: str) -> dict[str, Any]:

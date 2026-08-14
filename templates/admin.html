@@ -65,6 +65,18 @@
       </article>
     </section>
 
+    <section class="operations-strip" aria-label="Qualidade e governança do atendimento" id="qualidade">
+      <article><span>{{ snapshot.operations.human_handoffs or 0 }}</span><strong>Encaminhamentos humanos</strong></article>
+      <article><span>{{ snapshot.operations.blocked_responses or 0 }}</span><strong>Respostas bloqueadas</strong></article>
+      <article><span>{{ snapshot.operations.consents_refused or 0 }}</span><strong>Consentimentos recusados</strong></article>
+      <article><span>{{ snapshot.operations.average_human_response_minutes or 0 }} min</span><strong>Tempo médio até humano</strong></article>
+      <article><span>{{ snapshot.operations.abandoned_conversations or 0 }}</span><strong>Conversas abandonadas</strong></article>
+      <article><span>{{ snapshot.operations.misaligned_leads or 0 }}</span><strong>Leads não aderentes</strong></article>
+      <article><span>{{ snapshot.operations.complaints or 0 }}</span><strong>Reclamações</strong></article>
+      <article><span>{{ snapshot.operations.incorrect_answers or 0 }}</span><strong>Respostas incorretas</strong></article>
+      <article><span>{{ snapshot.operations.open_incidents or 0 }}</span><strong>Incidentes abertos</strong></article>
+    </section>
+
     <section class="admin-panel admin-attendance-panel" id="whatsapp">
       <div class="admin-panel-heading">
         <div>
@@ -115,6 +127,7 @@
             <button type="button" data-chat-filter="open" aria-pressed="false">Abertas</button>
             <button type="button" data-chat-filter="closed" aria-pressed="false">Encerradas</button>
             <button type="button" data-chat-filter="bot" aria-pressed="false">Automação</button>
+            <button type="button" data-chat-filter="urgent" aria-pressed="false">Urgentes</button>
           </div>
           <div class="chat-list" data-conversation-list>
           {% for item in snapshot.conversations %}
@@ -140,6 +153,7 @@
           <div class="chat-header" data-chat-header>
             <div><strong>Selecione uma conversa</strong><span>As mensagens aparecerão aqui.</span></div>
             <div class="chat-controls" data-chat-controls hidden>
+              <button type="button" class="is-primary" data-take-over>Assumir atendimento</button>
               <button type="button" data-toggle-bot>Automação</button>
               <button type="button" data-close-conversation>Encerrar conversa</button>
             </div>
@@ -171,6 +185,69 @@
             <p>Ao selecionar um contato, os dados do atendimento aparecerão aqui.</p>
           </div>
         </aside>
+      </div>
+    </section>
+
+    <section class="admin-panel governance-panel" id="base-juridica">
+      <div class="admin-panel-heading">
+        <div>
+          <p class="eyebrow">Resposta segura</p>
+          <h2>Base jurídica aprovada</h2>
+        </div>
+        <p>O atendimento automatizado usa fluxos internos. Registre aqui somente conteúdo revisado pelo escritório, com fonte e validade.</p>
+      </div>
+      {% if admin_user.role == 'manager' %}
+      <form class="governance-form" data-knowledge-form>
+        <label>Título<input name="title" required maxlength="180"></label>
+        <label>Área<input name="area" required maxlength="80" placeholder="Previdenciário"></label>
+        <label class="is-wide">Informação aprovada<textarea name="content" required maxlength="8000" rows="4"></textarea></label>
+        <label>Fonte<input name="source_title" required maxlength="240"></label>
+        <label>Endereço da fonte<input name="source_url" type="url" required maxlength="600" placeholder="https://..."></label>
+        <label>Revisar até<input name="review_due_at" type="date" required></label>
+        <label>Status<select name="status"><option value="current">Vigente</option><option value="superseded">Superada</option><option value="do_not_use">Não usar</option></select></label>
+        <button type="submit">Adicionar à base</button>
+        <p data-knowledge-note aria-live="polite"></p>
+      </form>
+      {% endif %}
+      <div class="knowledge-list" data-knowledge-list>
+        {% for item in snapshot.knowledge %}
+        <article>
+          <div><span>{{ item.area }}</span><strong>{{ item.title }}</strong></div>
+          <p>{{ item.source_title }} · revisão {{ item.review_due_at }}</p>
+          <div class="knowledge-status">
+            <small>{{ 'Vigente' if item.status == 'current' else ('Superada' if item.status == 'superseded' else 'Não usar') }} · aprovada por {{ item.approved_by }}</small>
+            {% if admin_user.role == 'manager' %}
+            <select data-knowledge-status="{{ item.id }}" aria-label="Situação de {{ item.title }}">
+              <option value="current" {{ 'selected' if item.status == 'current' else '' }}>Vigente</option>
+              <option value="superseded" {{ 'selected' if item.status == 'superseded' else '' }}>Superada</option>
+              <option value="do_not_use" {{ 'selected' if item.status == 'do_not_use' else '' }}>Não usar</option>
+            </select>
+            {% endif %}
+          </div>
+        </article>
+        {% else %}
+        <p class="admin-empty">Nenhum conteúdo jurídico foi aprovado para uso automatizado.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="admin-panel governance-panel" id="incidentes">
+      <div class="admin-panel-heading">
+        <div><p class="eyebrow">LGPD</p><h2>Registro de incidentes</h2></div>
+        <p>Registre qualquer suspeita de acesso indevido, envio incorreto ou exposição de dados para acompanhamento formal.</p>
+      </div>
+      {% if admin_user.role == 'manager' %}
+      <form class="incident-form" data-incident-form>
+        <label>Gravidade<select name="severity"><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option><option value="critical">Crítica</option></select></label>
+        <label>Resumo<textarea name="summary" required minlength="5" maxlength="2000" rows="3"></textarea></label>
+        <button type="submit">Registrar incidente</button>
+        <p data-incident-note aria-live="polite"></p>
+      </form>
+      {% endif %}
+      <div class="incident-list" data-incident-list>
+        {% for item in snapshot.incidents %}
+        <article data-incident-id="{{ item.id }}"><strong>{{ item.severity|upper }}</strong><p>{{ item.summary }}</p><div><small>{{ item.status }} · {{ item.created_at }}</small>{% if admin_user.role == 'manager' and item.status != 'resolved' %}<button type="button" data-resolve-incident="{{ item.id }}">Marcar resolvido</button>{% endif %}</div></article>
+        {% else %}<p class="admin-empty">Nenhum incidente registrado.</p>{% endfor %}
       </div>
     </section>
 
@@ -306,19 +383,73 @@
     </section>
 
     <section class="admin-panel" id="privacidade">
-      <div class="admin-panel-heading">
+      <div class="admin-panel-heading privacy-panel-heading">
         <div>
           <p class="eyebrow">Privacidade</p>
-          <h2>Exclusão de dados verificada</h2>
+          <h2>Direitos do titular</h2>
         </div>
-        <p>Use somente após confirmar a identidade e registrar a solicitação do titular.</p>
+        <p>Registre e execute solicitações somente após confirmar a identidade do titular.</p>
       </div>
+      {% if admin_user.role == 'manager' %}
       <form class="privacy-delete-form" data-privacy-delete>
-        <label for="privacy-phone">Telefone do titular</label>
-        <input id="privacy-phone" name="phone" type="tel" autocomplete="off" required placeholder="(11) 99999-9999">
+        <div class="privacy-action-heading">
+          <strong>Exclusão verificada</strong>
+          <span>Remove os dados vinculados ao telefone informado.</span>
+        </div>
+        <div class="privacy-field">
+          <label for="privacy-phone">Telefone do titular</label>
+          <input id="privacy-phone" name="phone" type="tel" autocomplete="off" required placeholder="(11) 99999-9999">
+        </div>
         <button type="submit">Excluir dados</button>
         <p data-privacy-note aria-live="polite"></p>
       </form>
+      <form class="privacy-export-form" data-privacy-export>
+        <div class="privacy-action-heading">
+          <strong>Acesso e portabilidade</strong>
+          <span>Gera um relatório dos dados localizados para o titular.</span>
+        </div>
+        <div class="privacy-field">
+          <label for="privacy-export-phone">Telefone do titular</label>
+          <input id="privacy-export-phone" name="phone" type="tel" autocomplete="off" required placeholder="(11) 99999-9999">
+        </div>
+        <button type="submit">Gerar relatório</button>
+        <p data-privacy-export-note aria-live="polite"></p>
+      </form>
+      <form class="privacy-correction-form" data-privacy-correction>
+        <div class="privacy-action-heading">
+          <strong>Correção solicitada</strong>
+          <span>Registra a demanda sem alterar automaticamente o cadastro.</span>
+        </div>
+        <div class="privacy-field">
+          <label for="privacy-correction-phone">Telefone do titular</label>
+          <input id="privacy-correction-phone" name="phone" type="tel" autocomplete="off" required placeholder="(11) 99999-9999">
+        </div>
+        <div class="privacy-field is-wide">
+          <label for="privacy-correction-details">Dados que precisam ser corrigidos</label>
+          <textarea id="privacy-correction-details" name="details" rows="3" minlength="5" maxlength="4000" required placeholder="Registre somente o necessário para executar a correção."></textarea>
+        </div>
+        <button type="submit">Registrar solicitação</button>
+        <p data-privacy-correction-note aria-live="polite"></p>
+      </form>
+      <div class="privacy-request-list" data-privacy-request-list>
+        <h3>Solicitações registradas</h3>
+        {% for item in snapshot.privacy_requests %}
+        <article data-privacy-request-id="{{ item.id }}">
+          <div>
+            <span>{{ {'access': 'Acesso', 'correction': 'Correção', 'deletion': 'Exclusão'}.get(item.request_type, item.request_type) }}</span>
+            <strong>{{ item.phone }}</strong>
+            {% if item.details %}<p>{{ item.details }}</p>{% endif %}
+          </div>
+          <small>{{ item.status }} · {{ item.created_at }}</small>
+          {% if item.status != 'completed' %}<button type="button" data-complete-privacy-request="{{ item.id }}">Marcar concluída</button>{% endif %}
+        </article>
+        {% else %}
+        <p class="admin-empty">Nenhuma solicitação de titular registrada.</p>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="admin-empty">As ações sobre dados pessoais são restritas ao perfil de gestão.</p>
+      {% endif %}
     </section>
 
     <section class="admin-panel" id="conexao">

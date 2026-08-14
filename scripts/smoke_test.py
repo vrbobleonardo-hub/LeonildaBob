@@ -815,6 +815,101 @@ def main() -> None:
             )
             expect(file_response.status_code == 200, file_response.text)
 
+            takeover = client.post(
+                f"/api/admin/conversations/{conversation_id}/take-over",
+                headers=admin_headers,
+            )
+            expect(takeover.status_code == 200, takeover.text)
+            expect(not takeover.json()["conversation"]["bot_enabled"], "Tomada humana manteve o bot ativo")
+            urgent_label = client.post(
+                f"/api/admin/conversations/{conversation_id}/labels",
+                json={"label": "urgent", "enabled": True},
+                headers=admin_headers,
+            )
+            expect(urgent_label.status_code == 200, urgent_label.text)
+            expect("urgent" in urgent_label.json()["labels"], "Etiqueta urgente não persistiu")
+            internal_note = client.post(
+                f"/api/admin/conversations/{conversation_id}/notes",
+                json={"note": "Retornar no período da tarde."},
+                headers=admin_headers,
+            )
+            expect(internal_note.status_code == 200, internal_note.text)
+
+            unsafe_send = client.post(
+                f"/api/admin/conversations/{conversation_id}/messages",
+                data={"text": "Você tem direito garantido ao BPC."},
+                headers=admin_headers,
+            )
+            expect(unsafe_send.status_code == 422, "Promessa de resultado não foi bloqueada")
+            unsupported_legal_send = client.post(
+                f"/api/admin/conversations/{conversation_id}/messages",
+                data={"text": "O BPC não exige contribuição ao INSS."},
+                headers=admin_headers,
+            )
+            expect(unsupported_legal_send.status_code == 422, "Afirmação sem base aprovada foi enviada")
+            knowledge_response = client.post(
+                "/api/admin/knowledge",
+                json={
+                    "title": "Natureza assistencial do BPC",
+                    "content": "O BPC é benefício assistencial e não exige contribuição ao INSS.",
+                    "source_title": "Fonte jurídica revisada pelo escritório",
+                    "source_url": "https://example.org/fonte-juridica",
+                    "area": "Previdenciário",
+                    "review_due_at": "2099-12-31",
+                    "status": "current",
+                },
+                headers=admin_headers,
+            )
+            expect(knowledge_response.status_code == 200, knowledge_response.text)
+            knowledge_id = knowledge_response.json()["item"]["id"]
+            supported_legal_send = client.post(
+                f"/api/admin/conversations/{conversation_id}/messages",
+                data={"text": "O BPC não exige contribuição ao INSS."},
+                headers=admin_headers,
+            )
+            expect(supported_legal_send.status_code == 200, supported_legal_send.text)
+            knowledge_status = client.post(
+                f"/api/admin/knowledge/{knowledge_id}/status",
+                json={"status": "do_not_use"},
+                headers=admin_headers,
+            )
+            expect(knowledge_status.status_code == 200, knowledge_status.text)
+            expect(knowledge_status.json()["item"]["status"] == "do_not_use", "Base jurídica não foi retirada")
+
+            incident_response = client.post(
+                "/api/admin/privacy/incidents",
+                json={"severity": "low", "summary": "Teste controlado de registro de incidente."},
+                headers=admin_headers,
+            )
+            expect(incident_response.status_code == 200, incident_response.text)
+            incident_id = incident_response.json()["item"]["id"]
+            incident_resolved = client.post(
+                f"/api/admin/privacy/incidents/{incident_id}/resolve",
+                headers=admin_headers,
+            )
+            expect(incident_resolved.status_code == 200, incident_resolved.text)
+            expect(incident_resolved.json()["item"]["status"] == "resolved", "Incidente não foi resolvido")
+            privacy_correction = client.post(
+                "/api/admin/privacy/correction",
+                json={
+                    "phone": "(11) 98765-4321",
+                    "details": "Corrigir o período preferencial de retorno.",
+                },
+                headers=admin_headers,
+            )
+            expect(privacy_correction.status_code == 200, privacy_correction.text)
+            expect(privacy_correction.json()["status"] == "open", "Correção LGPD não foi registrada")
+            correction_id = privacy_correction.json()["request_id"]
+            correction_completed = client.post(
+                f"/api/admin/privacy/requests/{correction_id}/complete",
+                headers=admin_headers,
+            )
+            expect(correction_completed.status_code == 200, correction_completed.text)
+            expect(
+                correction_completed.json()["item"]["status"] == "completed",
+                "Correção LGPD não foi concluída",
+            )
+
             messages = client.get(f"/api/admin/conversations/{conversation_id}/messages").json()["messages"]
             media_url = next(message["media_url"] for message in messages if message.get("media_url"))
             media_response = client.get(media_url)
@@ -955,6 +1050,8 @@ def main() -> None:
             )
             expect("atendimento é para você" in bpc_first_question, "Consentimento BPC não avançou")
             expect(not auto_triage_should_handoff(bpc_triage_id), "BPC transferiu antes da triagem mínima")
+            consent_rows = db.get_conversation(bpc_triage_id)["consent"]
+            expect(consent_rows["version"] == "triagem-saude-v1", "Consentimento não foi versionado")
 
             refusal_triage_id = db.get_or_create_conversation(
                 "5511922221111", kind="bpc"

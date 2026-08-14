@@ -107,9 +107,11 @@ class Settings:
         self.docs_enabled = env_bool("DOCS_ENABLED", self.app_env != "production")
 
         self.admin_username = os.getenv("ADMIN_USERNAME", "admin").strip()
+        self.admin_role = os.getenv("ADMIN_ROLE", "manager").strip().lower()
         self.admin_password = os.getenv("ADMIN_PASSWORD", "")
         self.admin_password_hash = os.getenv("ADMIN_PASSWORD_HASH", "")
         self.admin_session_secret = os.getenv("ADMIN_SESSION_SECRET", "")
+        self.data_encryption_key = os.getenv("DATA_ENCRYPTION_KEY", "").strip()
         self.admin_session_ttl_seconds = env_int(
             "ADMIN_SESSION_TTL_SECONDS", 28_800, minimum=900, maximum=604_800
         )
@@ -187,6 +189,8 @@ class Settings:
     def validate(self) -> None:
         if self.app_env not in {"development", "test", "production"}:
             raise RuntimeError("APP_ENV deve ser development, test ou production.")
+        if self.admin_role not in {"manager", "attendant", "viewer"}:
+            raise RuntimeError("ADMIN_ROLE deve ser manager, attendant ou viewer.")
         if self.admin_password_hash:
             password_hash = re.fullmatch(
                 r"pbkdf2_sha256\$(\d+)\$[0-9a-f]{32}\$[0-9a-f]{64}",

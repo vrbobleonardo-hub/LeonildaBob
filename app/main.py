@@ -27,6 +27,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .auth import authenticate, auth_is_configured, build_login_response, build_logout_response, current_admin, require_admin
 from . import db, storage
+from .governance import contains_legal_claim, inspect_outbound
 from .security import (
     LOGIN_CSRF_COOKIE,
     new_login_csrf_token,
@@ -80,6 +81,33 @@ def finish_auto_reply(conversation_id: int) -> None:
     db.mark_auto_reply(conversation_id)
     if auto_triage_should_handoff(conversation_id):
         db.update_conversation_controls(conversation_id, bot_enabled=False)
+
+
+SAFE_HANDOFF_REPLY = (
+    "Não consigo confirmar essa informação com segurança. Vou encaminhar sua dúvida para um atendente."
+)
+
+
+def vetted_automated_reply(conversation_id: int, reply: str) -> str:
+    result = inspect_outbound(reply)
+    if result.allowed:
+        return reply
+    db.record_safety_event(conversation_id, "out_auto", result.reasons, reply)
+    return SAFE_HANDOFF_REPLY
+
+
+def require_operator(request: Request) -> Any:
+    user = require_admin(request)
+    if user.role == "viewer":
+        raise HTTPException(status_code=403, detail="Seu perfil possui acesso somente para leitura.")
+    return user
+
+
+def require_manager(request: Request) -> Any:
+    user = require_admin(request)
+    if user.role != "manager":
+        raise HTTPException(status_code=403, detail="Esta ação exige o perfil de gestão.")
+    return user
 
 
 class SelectiveGZipMiddleware:
@@ -505,6 +533,61 @@ class ConversationControlPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Optional[Literal["open", "closed", "archived"]] = None
     bot_enabled: Optional[bool] = None
+
+
+class ConversationLabelPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    label: Literal["urgent", "qualified", "no_documents", "not_adherent", "complaint", "incorrect_answer"]
+    enabled: bool = True
+
+
+class ConversationNotePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    note: str = Field(min_length=2, max_length=2_000)
+
+
+class LegalKnowledgePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=3, max_length=180)
+    content: str = Field(min_length=10, max_length=8_000)
+    source_title: str = Field(min_length=3, max_length=240)
+    source_url: str = Field(min_length=8, max_length=600)
+    area: str = Field(min_length=2, max_length=80)
+    review_due_at: str = Field(min_length=8, max_length=40)
+    status: Literal["current", "superseded", "do_not_use"] = "current"
+
+    @field_validator("source_url")
+    @classmethod
+    def validate_source_url(cls, value: str) -> str:
+        parsed = urlparse(value.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Informe uma fonte HTTP ou HTTPS válida.")
+        return value.strip()
+
+    @field_validator("review_due_at")
+    @classmethod
+    def validate_review_due_at(cls, value: str) -> str:
+        try:
+            return datetime.fromisoformat(value).date().isoformat()
+        except ValueError as exc:
+            raise ValueError("Informe uma data de revisão válida.") from exc
+
+
+class LegalKnowledgeStatusPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["current", "superseded", "do_not_use"]
+
+
+class PrivacyIncidentPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    severity: Literal["low", "medium", "high", "critical"]
+    summary: str = Field(min_length=5, max_length=2_000)
+
+
+class PrivacyCorrectionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    phone: str = Field(min_length=8, max_length=32)
+    details: str = Field(min_length=5, max_length=4_000)
 
 
 class LeadStatusPayload(BaseModel):
@@ -1319,6 +1402,7 @@ def admin(request: Request) -> HTMLResponse:
     if not user:
         return RedirectResponse("/admin/login?next=/admin", status_code=303)
     snapshot = db.admin_snapshot()
+    snapshot["privacy_requests"] = db.list_privacy_requests() if user.role == "manager" else []
     context = template_context(
         request,
         "admin",
@@ -1598,7 +1682,64 @@ def admin_conversation_messages(conversation_id: int, request: Request) -> JSONR
     conversation = db.get_conversation(conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversa não encontrada.")
-    return JSONResponse({"ok": True, "conversation": conversation, "messages": db.list_messages(conversation_id)})
+    return JSONResponse(
+        {
+            "ok": True,
+            "conversation": conversation,
+            "messages": db.list_messages(conversation_id),
+            "triage": db.triage_summary(conversation_id),
+        }
+    )
+
+
+@app.post("/api/admin/conversations/{conversation_id}/take-over")
+def admin_take_over_conversation(
+    conversation_id: int,
+    request: Request,
+    admin_user: Any = Depends(require_operator),
+) -> JSONResponse:
+    verify_same_origin(request)
+    verify_session_csrf(request)
+    conversation = db.take_over_conversation(conversation_id, admin_user.username)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+    return JSONResponse({"ok": True, "conversation": conversation})
+
+
+@app.post("/api/admin/conversations/{conversation_id}/labels")
+def admin_conversation_label(
+    conversation_id: int,
+    payload: ConversationLabelPayload,
+    request: Request,
+    admin_user: Any = Depends(require_operator),
+) -> JSONResponse:
+    verify_same_origin(request)
+    verify_session_csrf(request)
+    try:
+        labels = db.set_conversation_label(
+            conversation_id, payload.label, payload.enabled, admin_user.username
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return JSONResponse({"ok": True, "labels": labels})
+
+
+@app.post("/api/admin/conversations/{conversation_id}/notes")
+def admin_conversation_note(
+    conversation_id: int,
+    payload: ConversationNotePayload,
+    request: Request,
+    admin_user: Any = Depends(require_operator),
+) -> JSONResponse:
+    verify_same_origin(request)
+    verify_session_csrf(request)
+    try:
+        note = db.add_conversation_note(conversation_id, admin_user.username, payload.note)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse({"ok": True, "note": note})
 
 
 @app.get("/api/admin/media")
@@ -1632,7 +1773,7 @@ def admin_media(path: str, request: Request, name: str = "arquivo") -> Response:
 def admin_send_message(
     conversation_id: int,
     request: Request,
-    _admin: Any = Depends(require_admin),
+    admin_user: Any = Depends(require_operator),
     text: str = Form(""),
     attachment: Optional[UploadFile] = File(None),
 ) -> JSONResponse:
@@ -1654,6 +1795,32 @@ def admin_send_message(
         raise HTTPException(status_code=400, detail="Legenda muito longa. Use até 1.024 caracteres com arquivos.")
     if not clean_text and not attachment:
         raise HTTPException(status_code=400, detail="Escreva uma mensagem ou selecione um arquivo.")
+    if clean_text:
+        safety = inspect_outbound(clean_text)
+        if not safety.allowed:
+            db.record_safety_event(conversation_id, "out_human", safety.reasons, clean_text)
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Mensagem bloqueada pela revisão de segurança: "
+                    + ", ".join(safety.reasons)
+                    + ". Revise o texto ou encaminhe para validação jurídica."
+                ),
+            )
+        if contains_legal_claim(clean_text) and not db.legal_claim_supported(clean_text):
+            db.record_safety_event(
+                conversation_id,
+                "out_human",
+                ["afirmação jurídica fora da base aprovada ou com revisão vencida"],
+                clean_text,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Mensagem bloqueada: a afirmação jurídica não foi localizada em conteúdo vigente "
+                    "da base aprovada. Cadastre ou revise a fonte antes do envio."
+                ),
+            )
     saved_path: Optional[Path] = None
     remote_object_path: Optional[str] = None
     try:
@@ -1677,6 +1844,7 @@ def admin_send_message(
                 path.unlink(missing_ok=True)
         else:
             result = send_whatsapp_text(conversation["phone"], clean_text, conversation_id=conversation_id)
+        db.mark_human_response(conversation_id, admin_user.username)
         return JSONResponse({"ok": True, "status": result.get("status", "sent")})
     except HTTPException:
         if saved_path:
@@ -1729,7 +1897,7 @@ def admin_conversation_controls(
     payload: ConversationControlPayload,
     request: Request,
 ) -> JSONResponse:
-    require_admin(request)
+    require_operator(request)
     verify_same_origin(request)
     verify_session_csrf(request)
     updated = db.update_conversation_controls(
@@ -1744,7 +1912,7 @@ def admin_conversation_controls(
 
 @app.post("/api/admin/leads/{lead_id}/status")
 def admin_lead_status(lead_id: int, payload: LeadStatusPayload, request: Request) -> JSONResponse:
-    require_admin(request)
+    require_operator(request)
     verify_same_origin(request)
     verify_session_csrf(request)
     if not db.update_lead_status(lead_id, payload.status):
@@ -1754,7 +1922,7 @@ def admin_lead_status(lead_id: int, payload: LeadStatusPayload, request: Request
 
 @app.post("/api/admin/privacy/delete")
 def admin_privacy_delete(payload: PrivacyDeletePayload, request: Request) -> JSONResponse:
-    require_admin(request)
+    admin_user = require_manager(request)
     verify_same_origin(request)
     verify_session_csrf(request)
     try:
@@ -1764,7 +1932,111 @@ def admin_privacy_delete(payload: PrivacyDeletePayload, request: Request) -> JSO
     if not delete_private_media(db.contact_media_urls(phone)):
         raise HTTPException(status_code=503, detail="Não foi possível excluir todos os arquivos. Tente novamente.")
     deleted = db.delete_contact_data(phone)
+    db.record_privacy_request(phone, "deletion", admin_user.username, status="completed")
     return JSONResponse({"ok": True, "deleted": deleted})
+
+
+@app.post("/api/admin/knowledge")
+def admin_create_knowledge(
+    payload: LegalKnowledgePayload,
+    request: Request,
+    admin_user: Any = Depends(require_manager),
+) -> JSONResponse:
+    verify_same_origin(request)
+    verify_session_csrf(request)
+    item = db.save_legal_knowledge(payload.model_dump(), admin_user.username)
+    return JSONResponse({"ok": True, "item": item})
+
+
+@app.post("/api/admin/knowledge/{item_id}/status")
+def admin_update_knowledge_status(
+    item_id: int,
+    payload: LegalKnowledgeStatusPayload,
+    request: Request,
+    admin_user: Any = Depends(require_manager),
+) -> JSONResponse:
+    verify_same_origin(request)
+    verify_session_csrf(request)
+    item = db.update_legal_knowledge_status(item_id, payload.status, admin_user.username)
+    if not item:
+        raise HTTPException(status_code=404, detail="Conteúdo jurídico não encontrado.")
+    return JSONResponse({"ok": True, "item": item})
+
+
+@app.post("/api/admin/privacy/incidents")
+def admin_create_privacy_incident(
+    payload: PrivacyIncidentPayload,
+    request: Request,
+    admin_user: Any = Depends(require_manager),
+) -> JSONResponse:
+    verify_same_origin(request)
+    verify_session_csrf(request)
+    item = db.create_privacy_incident(admin_user.username, payload.severity, payload.summary)
+    return JSONResponse({"ok": True, "item": item})
+
+
+@app.post("/api/admin/privacy/incidents/{incident_id}/resolve")
+def admin_resolve_privacy_incident(
+    incident_id: int,
+    request: Request,
+    admin_user: Any = Depends(require_manager),
+) -> JSONResponse:
+    verify_same_origin(request)
+    verify_session_csrf(request)
+    item = db.resolve_privacy_incident(incident_id, admin_user.username)
+    if not item:
+        raise HTTPException(status_code=404, detail="Incidente não encontrado.")
+    return JSONResponse({"ok": True, "item": item})
+
+
+@app.post("/api/admin/privacy/correction")
+def admin_privacy_correction(
+    payload: PrivacyCorrectionPayload,
+    request: Request,
+    admin_user: Any = Depends(require_manager),
+) -> JSONResponse:
+    verify_same_origin(request)
+    verify_session_csrf(request)
+    try:
+        normalized = normalize_phone(payload.phone)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    request_id = db.record_privacy_request(
+        normalized,
+        "correction",
+        admin_user.username,
+        status="open",
+        details=payload.details,
+    )
+    return JSONResponse({"ok": True, "request_id": request_id, "status": "open"})
+
+
+@app.post("/api/admin/privacy/requests/{request_id}/complete")
+def admin_complete_privacy_request(
+    request_id: int,
+    request: Request,
+    admin_user: Any = Depends(require_manager),
+) -> JSONResponse:
+    verify_same_origin(request)
+    verify_session_csrf(request)
+    item = db.complete_privacy_request(request_id, admin_user.username)
+    if not item:
+        raise HTTPException(status_code=404, detail="Solicitação de privacidade não encontrada.")
+    return JSONResponse({"ok": True, "item": item})
+
+
+@app.get("/api/admin/privacy/export")
+def admin_privacy_export(
+    request: Request,
+    phone: str = Query(..., min_length=8, max_length=32),
+) -> JSONResponse:
+    admin_user = require_manager(request)
+    try:
+        normalized = normalize_phone(phone)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.record_privacy_request(normalized, "access", admin_user.username, status="completed")
+    return JSONResponse({"ok": True, "data": db.export_contact_data(normalized)})
 
 
 @app.get("/api/admin/whatsapp/status")
@@ -1977,6 +2249,7 @@ def process_whatsapp_payload(payload: dict[str, Any]) -> None:
                         conversation_id=conversation_id,
                         kind=conversation.get("kind"),
                     )
+                    reply = vetted_automated_reply(conversation_id, reply)
                     try:
                         send_whatsapp_text(phone, reply, conversation_id=conversation_id)
                         finish_auto_reply(conversation_id)
@@ -2084,6 +2357,7 @@ def record_evolution_inbound(item: dict[str, Any]) -> int | None:
             conversation_id=conversation_id,
             kind=conversation.get("kind"),
         )
+        reply = vetted_automated_reply(conversation_id, reply)
         try:
             send_whatsapp_text(phone, reply, conversation_id=conversation_id)
             finish_auto_reply(conversation_id)
@@ -2149,6 +2423,7 @@ def receive_qr_inbound(payload: QrInboundPayload, request: Request) -> JSONRespo
             conversation_id=conversation_id,
             kind=conversation.get("kind"),
         )
+        reply = vetted_automated_reply(conversation_id, reply)
         try:
             send_whatsapp_text(phone, reply, conversation_id=conversation_id)
             finish_auto_reply(conversation_id)

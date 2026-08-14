@@ -22,6 +22,7 @@ SESSION_COOKIE = "bob_admin_session"
 @dataclass(frozen=True)
 class AdminUser:
     username: str
+    role: str
 
 
 def normalize_username(value: str) -> str:
@@ -73,7 +74,7 @@ def authenticate(username: str, password: str) -> AdminUser | None:
         return None
     if not verify_password(password):
         return None
-    return AdminUser(username=settings.admin_username)
+    return AdminUser(username=settings.admin_username, role=settings.admin_role)
 
 
 def _sign(payload: str) -> str:
@@ -116,7 +117,7 @@ def verify_session_token(token: str | None) -> AdminUser | None:
             return None
         if not db.admin_session_is_active(_token_hash(token), username, int(time.time())):
             return None
-        return AdminUser(username=username)
+        return AdminUser(username=username, role=settings.admin_role)
     except Exception:
         return None
 
